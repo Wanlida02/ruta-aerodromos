@@ -184,7 +184,7 @@ var AIRFIELDS=[["LECO","A Coruña Airport","Culleredo",43.3021,-8.37726,"a"],["L
 (function(){
 "use strict";
 
-var KEY="aerodromos.v3",KEY_ROUTES="aerodromos.routes.v1",KEY_GEO="aerodromos.geo.v1",COLORS=7;
+var KEY="aerodromos.v4",KEY_ROUTES="aerodromos.routes.v1",KEY_GEO="aerodromos.geo.v1",COLORS=7;
 var OSRM="https://router.project-osrm.org",NOM="https://nominatim.openstreetmap.org";
 
 /* ---------- Utilidades ---------- */
@@ -206,6 +206,10 @@ function timedFetch(url,ms){
 }
 
 /* ---------- Estado ---------- */
+function emptyState(){
+  var s=exampleState();s.places=[];s.plan={days:[[],[],[]],un:[]};s.example=false;
+  s.hotel={name:"",lat:40.4168,lon:-3.7038,set:false,approx:false,note:""};return s;
+}
 function exampleState(){
   var s={
     hotel:{name:"Hotel en Valencia (cambia aquí tu hotel)",lat:39.4699,lon:-0.3763,approx:true,note:"Marcador provisional en el centro de Valencia."},
@@ -223,14 +227,20 @@ function exampleState(){
   return s;
 }
 function mk(name,code,muni,lat,lon,approx,note){return {id:newId(),name:name,code:code||"",muni:muni||"",lat:lat,lon:lon,approx:!!approx,note:note||"",visit:120,on:true,pin:null};}
-var state=(function(){var s=lsGet(KEY);return(s&&s.places&&s.days&&s.plan&&s.hotel&&s.cfg)?s:null;})()||exampleState();
+var state=(function(){var s=lsGet(KEY);return(s&&s.places&&s.days&&s.plan&&s.hotel&&s.cfg)?s:null;})()||(/[?&]demo=1/.test(location.search)?exampleState():emptyState());
+if(state.hotel.set==null)state.hotel.set=true;
 if(!state.ov)state.ov={};
 var routeCache=lsGet(KEY_ROUTES)||{},geoCache=lsGet(KEY_GEO)||{},geoFail={},memo=new Map();
-var routeMode="idle",addMsg="",addInfo="",hotelMsg="",removing=null,editingLeg=null,editingPos=null,drag=null;
+var clearing=false,routeMode="idle",addMsg="",addInfo="",hotelMsg="",removing=null,editingLeg=null,editingPos=null,drag=null;
 function save(){lsSet(KEY,state);}
 
 function byId(id){for(var i=0;i<state.places.length;i++)if(state.places[i].id===id)return state.places[i];return null;}
-function node(id){return id==="H"?state.hotel:byId(id);}
+function getHotel(){
+  var h=state.hotel;if(h.set!==false)return h;
+  var ps=state.places.filter(function(p){return p.on;});if(!ps.length)return h;
+  var la=0,lo=0;ps.forEach(function(p){la+=p.lat;lo+=p.lon;});return {name:"(sin hotel)",lat:la/ps.length,lon:lo/ps.length,set:false};
+}
+function node(id){return id==="H"?getHotel():byId(id);}
 function ck(n){return n.lat.toFixed(4)+","+n.lon.toFixed(4);}
 function okey(a,b){return a<b?a+"|"+b:b+"|"+a;}
 
@@ -245,11 +255,11 @@ function leg(a,b){
   return {min:timeFromKm(k),km:k,src:"est"};
 }
 function coverage(){
-  var ids=["H"].concat(state.places.filter(function(p){return p.on;}).map(function(p){return p.id;})),tot=0,real=0;
+  var ids=(state.hotel.set===false?[]:["H"]).concat(state.places.filter(function(p){return p.on;}).map(function(p){return p.id;})),tot=0,real=0;
   for(var i=0;i<ids.length;i++)for(var j=i+1;j<ids.length;j++){tot++;var s=leg(ids[i],ids[j]).src;if(s!=="est")real++;}
   return {tot:tot,real:real};
 }
-function nodeList(){return [state.hotel].concat(state.places);}
+function nodeList(){return (state.hotel.set===false?[]:[state.hotel]).concat(state.places);}
 function loadRoutes(){
   var ns=nodeList(),need=false;
   for(var i=0;i<ns.length&&!need;i++)for(var j=i+1;j<ns.length;j++){if(routeCache[ck(ns[i])+">"+ck(ns[j])]==null&&routeCache[ck(ns[j])+">"+ck(ns[i])]==null){need=true;break;}}
@@ -433,12 +443,12 @@ function searchHotel(q){
     box.innerHTML=hotelItems.length?hotelItems.map(function(it,i){return '<button type="button" data-act="pickhotel" data-i="'+i+'"><div class="t">'+esc(it.name)+'</div><div class="s">'+esc(it.src)+'</div></button>';}).join(""):'<div class="none">Sin resultados. Prueba con la calle y la ciudad, o pega coordenadas.</div>';
   }).catch(function(){box.innerHTML='<div class="none">Sin conexión al buscador de mapas. Pega coordenadas o un enlace de Google Maps.</div>';});
 }
-function setHotel(h){state.hotel=h;state.example=false;routeMode="idle";optimizeAll();save();render();refreshRoutes(true);}
+function setHotel(h){h.set=true;state.hotel=h;state.example=false;routeMode="idle";optimizeAll();save();render();refreshRoutes(true);}
 
 /* ---------- Enlaces de navegación ---------- */
 function q(n){return n.lat.toFixed(6)+","+n.lon.toFixed(6);}
 function linksFor(d){
-  var ids=state.plan.days[d].filter(function(i){return byId(i).on;});if(!ids.length)return null;
+  var ids=state.plan.days[d].filter(function(i){return byId(i).on;});if(!ids.length||state.hotel.set===false)return null;
   var H=state.hotel,hq=q(H),stops=ids.map(byId),sq=stops.map(q);
   return {
     g:"https://www.google.com/maps/dir/?api=1&travelmode=driving&origin="+encodeURIComponent(hq)+"&destination="+encodeURIComponent(hq)+"&waypoints="+encodeURIComponent(sq.join("|")),
@@ -489,8 +499,8 @@ function drawMap(){
   });
   state.places.forEach(function(p){if(!p.on)return;all.push([p.lat,p.lon]);var m=inDay[p.id];
     L.marker([p.lat,p.lon],{icon:L.divIcon({className:"",iconSize:[24,24],iconAnchor:[12,12],html:m?'<div class="mk" style="background:'+colorOf(m.d)+'">'+m.k+'</div>':'<div class="mk off">·</div>'}),title:p.name}).addTo(layer);});
-  all.push([state.hotel.lat,state.hotel.lon]);
-  L.marker([state.hotel.lat,state.hotel.lon],{icon:L.divIcon({className:"",iconSize:[24,24],iconAnchor:[12,12],html:'<div class="mk h">H</div>'}),title:"Hotel"}).addTo(layer);
+  var HM=getHotel();all.push([HM.lat,HM.lon]);
+  L.marker([HM.lat,HM.lon],{icon:L.divIcon({className:"",iconSize:[24,24],iconAnchor:[12,12],html:'<div class="mk h">H</div>'}),title:"Hotel"}).addTo(layer);
   try{map.fitBounds(L.latLngBounds(all),{padding:[28,28],maxZoom:14});}catch(e){}
 }
 function mountMap(){
@@ -569,10 +579,13 @@ function colHTML(d){
    '<div style="margin-top:8px"><button class="btn small" data-act="reorder" data-d="'+d+'">Reordenar este día</button></div></details></div>'+
    '<div class="list">'+body+'</div></section>';
 }
+function fitsAlone(id){
+  for(var d=0;d<state.nDays;d++){if(evalDay(d,[id]).feasible)return true;}return false;}
 function unHTML(){
   var ids=state.plan.un,body=ids.map(function(i){return stopHTML(i,-1,null);}).join("");
   return '<section class="col un" data-col="u"><div class="colhead"><div class="row"><h3>Sin asignar</h3><span class="badge idle">'+ids.length+'</span></div>'+
-    '<div class="muted" style="font-size:12px">Lo que no cabe en los días o has apartado. No cuenta en la ruta.</div></div><div class="list">'+(body||'<div class="empty">Todo está asignado</div>')+'</div></section>';
+    '<div class="muted" style="font-size:12px">Lo que no cabe en los días o has apartado. No cuenta en la ruta.</div>'+(function(){var bad=ids.filter(function(i){return byId(i).on&&!fitsAlone(i);});
+    return bad.length?'<div class="why">'+(state.hotel.set===false?'Falta indicar el hotel.':'No caben ni solos en un día (muy lejos del hotel, o con horario o límite muy corto): '+bad.map(function(i){return esc(byId(i).name);}).join(", ")+'. Revisa el hotel, el horario o el límite de horas.')+'</div>':'';})()+'</div><div class="list">'+(body||'<div class="empty">Todo está asignado</div>')+'</div></section>';
 }
 function render(){
   var open=[];document.querySelectorAll("details[open]").forEach(function(x,i){open.push(i);});
@@ -583,10 +596,10 @@ function render(){
   var status=routeMode==="loading"?'<span class="chip">Consultando rutas…</span>':
     (cov.real===cov.tot&&cov.tot>0)?'<span class="chip ok"><b>Rutas reales</b> · km por carretera (OpenStreetMap)</span>':
     '<span class="chip warn"><b>'+(cov.real?"Parte estimada":"Distancias estimadas")+'</b> · '+(routeMode==="fail"?"sin conexión a rutas":"tramos con ≈")+' <button data-act="retry">Consultar rutas reales</button></span>';
-  var h='<header class="top"><div><h1>Ruta de aeródromos</h1><p>Reparte los aeródromos entre los días de tu estancia y ordénalos para conducir lo mínimo, respetando horas, comida y horario.</p></div><div class="chips">'+status+(state.example?'<span class="chip">Ejemplo: Valencia</span>':"")+'</div></header>';
+  var h='<header class="top"><div><h1>Ruta de aeródromos</h1><p>Reparte los aeródromos entre los días de tu estancia y ordénalos para conducir lo mínimo, respetando horas, comida y horario.</p></div><div class="chips">'+status+(state.example?'<span class="chip">Ejemplo de demostración</span>':"")+'</div></header>';
   h+='<div class="card setup">'+
    '<div class="field"><label for="hotelq">Hotel</label><div class="inrow"><input id="hotelq" type="text" placeholder="Nombre y ciudad, o coordenadas" value="" autocomplete="off"><button class="btn" data-act="hsearch" type="button">Buscar</button></div>'+
-   '<div class="sugg" id="hsugg" hidden></div><small><b>'+esc(state.hotel.name)+'</b> · <span class="mono">'+state.hotel.lat.toFixed(4)+', '+state.hotel.lon.toFixed(4)+'</span>'+(state.hotel.approx?' · '+esc(state.hotel.note||"posición aproximada"):"")+'</small></div>'+
+   '<div class="sugg" id="hsugg" hidden></div>'+(state.hotel.set===false?'<small style="color:var(--warn)"><b>Falta el hotel.</b> Búscalo arriba (nombre y ciudad) para calcular las rutas.</small>':'<small><b>'+esc(state.hotel.name)+'</b> · <span class="mono">'+state.hotel.lat.toFixed(4)+', '+state.hotel.lon.toFixed(4)+'</span>'+(state.hotel.approx?' · '+esc(state.hotel.note||"posición aproximada"):"")+'</small>')+'</div>'+
    '<div class="field"><span class="lbl">Días de estancia</span><div class="stepper"><button data-act="daysminus" aria-label="Quitar un día">−</button><output>'+state.nDays+'</output><button data-act="daysplus" aria-label="Añadir un día">+</button></div></div>'+
    '<div class="field"><label for="fd">Primer día (opcional)</label><input id="fd" type="date" value="'+esc(state.firstDate)+'" data-field="firstDate"></div>'+
    '<details class="adv"><summary>Ajustes de comida y cálculo</summary><div class="advgrid">'+
@@ -607,7 +620,7 @@ function render(){
    '<button class="btn primary" type="submit">Añadir</button></div>'+(addMsg?'<div class="msg">'+esc(addMsg)+'</div>':"")+'</form>';
   h+='<div class="summary"><div><div class="k">Aeródromos en ruta</div><div class="v">'+tot.n+' de '+total+'</div></div><div><div class="k">Conducción total</div><div class="v">'+dur(tot.drive)+'</div></div><div><div class="k">Distancia total</div><div class="v">'+km1(tot.km)+'</div></div>'+
    '<div><div class="k">Sin asignar</div><div class="v">'+state.plan.un.filter(function(i){return byId(i).on;}).length+'</div></div></div>';
-  h+='<div class="toolbar"><button class="btn primary" data-act="optimize">Optimizar todo</button><button class="btn" data-act="reset">Cargar ejemplo</button></div>';
+  h+='<div class="toolbar"><button class="btn primary" data-act="optimize">Optimizar todo</button><button class="btn" data-act="clear">'+(clearing?'¿Seguro? Se quitan todos los aeródromos':'Vaciar lista de aeródromos')+'</button></div>';
   h+='<div class="board" id="board">';for(var k=0;k<state.nDays;k++)h+=colHTML(k);h+=unHTML()+'</div>';
   h+='<div class="below"><section class="card mapcard"><h2>Mapa</h2><div class="mapslot" id="mapslot"></div><div class="legend">';
   for(var l=0;l<state.nDays;l++)h+='<span><i style="background:var(--d'+(l%COLORS)+')"></i>Día '+(l+1)+'</span>';
@@ -615,7 +628,7 @@ function render(){
   h+='<section class="card links"><h2>Navegar</h2>';
   for(var qd=0;qd<state.nDays;qd++){var Lk=linksFor(qd);
     h+='<div class="linkday" style="--dc:var(--d'+(qd%COLORS)+')"><div class="hd"><i></i>Día '+(qd+1)+' <span class="muted" style="font-weight:400">'+esc(dayDate(qd))+'</span></div>';
-    if(!Lk)h+='<div class="muted">Sin destinos este día.</div>';
+    if(!Lk)h+='<div class="muted">'+(state.hotel.set===false?'Indica primero el hotel.':'Sin destinos este día.')+'</div>';
     else{h+='<div class="navs"><a class="nav g" href="'+esc(Lk.g)+'" target="_blank" rel="noopener">Google Maps</a><a class="nav a" href="'+esc(Lk.a)+'" target="_blank" rel="noopener">Mapas de iPhone</a></div>'+
       '<div class="wazes"><span>Waze, parada a parada:</span>'+Lk.w.map(function(x,i){return '<a class="nav mini" href="'+esc(x.url)+'" target="_blank" rel="noopener">'+(i+1)+'. '+esc(x.p.code||x.p.name)+'</a>';}).join("")+'</div>';}
     h+='</div>';}
@@ -637,8 +650,9 @@ function moveTo(id,target,index){
 function posOf(id){var r=-1;state.plan.days.forEach(function(a,d){if(a.indexOf(id)>-1)r=d;});return r;}
 app.addEventListener("click",function(e){
   var b=e.target.closest("[data-act]");if(!b)return;var a=b.dataset.act,id=b.dataset.id;
-  if(a==="optimize"){optimizeAll();save();render();toast("Ruta optimizada");}
-  else if(a==="reset"){var keepRoutes=true;state=exampleState();optimizeAll();save();render();refreshRoutes(true);}
+  if(a==="optimize"){state.places.forEach(function(p){p.pin=null;});optimizeAll();save();render();toast("Ruta optimizada");}
+  else if(a==="clear"){if(!clearing){clearing=true;render();setTimeout(function(){if(clearing){clearing=false;render();}},4000);}
+    else{clearing=false;state.places=[];state.plan={days:[],un:[]};state.ov={};state.example=false;normalizePlan();memo=new Map();save();render();}}
   else if(a==="retry"){routeMode="idle";refreshRoutes(true);}
   else if(a==="daysplus"){if(state.nDays<7){state.nDays++;normalizePlan();optimizeAll();save();render();}}
   else if(a==="daysminus"){if(state.nDays>1){state.nDays--;normalizePlan();optimizeAll();save();render();}}
@@ -733,7 +747,7 @@ normalizePlan();
 if(!state.plan.days.some(function(a){return a.length;})&&state.places.length)optimizeAll();
 render();save();
 refreshRoutes(true);
-window.__app={state:function(){return state;},optimizeAll:optimizeAll,evalDay:evalDay,render:render,searchDB:searchDB,parseCoords:parseCoords,leg:leg};
+window.__app={state:function(){return state;},addPlace:addPlace,setHotel:setHotel,optimizeAll:optimizeAll,evalDay:evalDay,render:render,searchDB:searchDB,parseCoords:parseCoords,leg:leg};
 })();
 </script>
 </body>
