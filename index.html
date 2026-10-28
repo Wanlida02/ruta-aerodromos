@@ -1,0 +1,740 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Ruta de Aeródromos</title>
+<meta name="description" content="Reparte aeródromos entre los días de tu estancia, optimiza la conducción y abre la ruta en Google Maps, Waze o Mapas de iPhone.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Semi+Condensed:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<style>
+/* Layout: cabecera + ajustes + tablero de días en columnas (una por día + "Sin asignar") + mapa pequeño + enlaces de navegación */
+:root{
+  color-scheme:light;
+  --bg:#EDF0F4; --surface:#FFFFFF; --surface2:#F5F7FA; --ink:#12202E; --muted:#566879; --line:#D3DAE2;
+  --accent:#0A5FB4; --accent-ink:#FFFFFF; --accent-soft:#E2EDF9;
+  --ok:#1B7A4B; --ok-soft:#E1F3EA; --warn:#9A5B00; --warn-soft:#FFF1D6; --bad:#B3261E; --bad-soft:#FBE6E3;
+  --d0:#0A5FB4; --d1:#C2410C; --d2:#0F766E; --d3:#7C3AED; --d4:#A16207; --d5:#BE185D; --d6:#4D7C0F;
+  --shadow:0 1px 2px rgba(18,32,46,.06),0 4px 14px rgba(18,32,46,.06);
+  --f-display:"Barlow Semi Condensed","Arial Narrow",system-ui,sans-serif;
+  --f-body:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --f-mono:"IBM Plex Mono",ui-monospace,Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#0D1620; --surface:#15212D; --surface2:#1B2A39; --ink:#E6EDF4; --muted:#94A5B6; --line:#2A3B4C;
+  --accent:#5DA8F2; --accent-ink:#0B1824; --accent-soft:#1A3550;
+  --ok:#52C58B; --ok-soft:#173A2B; --warn:#F0B54F; --warn-soft:#3B2D10; --bad:#FF8A80; --bad-soft:#3F1B18;
+  --d0:#5DA8F2; --d1:#FB923C; --d2:#2DD4BF; --d3:#A78BFA; --d4:#FACC15; --d5:#F472B6; --d6:#A3E635;
+  --shadow:0 1px 2px rgba(0,0,0,.3),0 4px 14px rgba(0,0,0,.25); color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0D1620; --surface:#15212D; --surface2:#1B2A39; --ink:#E6EDF4; --muted:#94A5B6; --line:#2A3B4C;
+  --accent:#5DA8F2; --accent-ink:#0B1824; --accent-soft:#1A3550;
+  --ok:#52C58B; --ok-soft:#173A2B; --warn:#F0B54F; --warn-soft:#3B2D10; --bad:#FF8A80; --bad-soft:#3F1B18;
+  --d0:#5DA8F2; --d1:#FB923C; --d2:#2DD4BF; --d3:#A78BFA; --d4:#FACC15; --d5:#F472B6; --d6:#A3E635;
+  --shadow:0 1px 2px rgba(0,0,0,.3),0 4px 14px rgba(0,0,0,.25); color-scheme:dark}
+*{box-sizing:border-box}
+html{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+body{margin:0;background:var(--bg);color:var(--ink);font:400 14px/1.45 var(--f-body);
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:20px 48px}
+.wrap{max-width:1280px;margin:0 auto;display:flex;flex-direction:column;gap:16px}
+h1,h2,h3{font-family:var(--f-display);margin:0;font-weight:600;text-wrap:balance}
+button,input,select{font:inherit;color:inherit}
+button{cursor:pointer}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.mono{font-family:var(--f-mono);font-variant-numeric:tabular-nums}
+.muted{color:var(--muted)}
+.top{display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:space-between;gap:12px}
+.top h1{font-size:30px;letter-spacing:.01em;line-height:1.05}
+.top p{margin:4px 0 0;color:var(--muted);max-width:60ch}
+.chips{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.chip{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);background:var(--surface);border-radius:999px;padding:4px 10px;font-size:12px;color:var(--muted)}
+.chip b{color:var(--ink);font-weight:600}
+.chip.ok{background:var(--ok-soft);color:var(--ok);border-color:transparent}
+.chip.ok b{color:var(--ok)}
+.chip.warn{background:var(--warn-soft);color:var(--warn);border-color:transparent}
+.chip.warn b{color:var(--warn)}
+.chip button{all:unset;cursor:pointer;text-decoration:underline}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:10px;box-shadow:var(--shadow)}
+.setup{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:14px 18px;padding:14px 16px}
+.field{display:flex;flex-direction:column;gap:4px;min-width:0;position:relative}
+.field label,.lbl{font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);font-weight:600}
+.field input,.field select{border:1px solid var(--line);background:var(--surface2);border-radius:6px;padding:7px 9px;min-width:0;width:100%}
+.field small{color:var(--muted);font-size:12px;overflow-wrap:anywhere}
+.inrow{display:flex;gap:6px}
+.stepper{display:flex;align-items:center;gap:8px}
+.stepper button{width:34px;height:34px;border-radius:6px;border:1px solid var(--line);background:var(--surface2);font-size:18px;line-height:1}
+.stepper output{min-width:2ch;text-align:center;font:600 18px var(--f-mono)}
+details.adv{grid-column:1/-1;border-top:1px solid var(--line);padding-top:10px}
+details.adv summary{cursor:pointer;font-weight:600;color:var(--accent)}
+.advgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-top:10px}
+.check{display:flex;align-items:center;gap:8px;font-size:13px}
+.check input{width:auto}
+.addbar{display:flex;flex-wrap:wrap;gap:10px;padding:12px 16px;align-items:flex-end}
+.addbar .field{flex:1 1 280px}
+.addbar .field.sm{flex:0 0 120px}
+.btn{border:1px solid var(--line);background:var(--surface2);border-radius:6px;padding:8px 14px;font-weight:600}
+.btn.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+.btn.small{padding:5px 10px;font-size:12px}
+.msg{padding:0 16px 12px;color:var(--bad);font-size:13px}
+.msg.info{color:var(--muted)}
+.sugg{position:absolute;left:0;right:0;top:100%;z-index:20;background:var(--surface);border:1px solid var(--line);border-radius:8px;box-shadow:var(--shadow);margin-top:4px;max-height:340px;overflow:auto}
+.sugg .hd{font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);font-weight:600;padding:8px 12px 4px}
+.sugg button{all:unset;box-sizing:border-box;display:block;width:100%;padding:8px 12px;cursor:pointer}
+.sugg button:hover,.sugg button:focus-visible{background:var(--accent-soft)}
+.sugg .t{font-weight:600}
+.sugg .s{font-size:12px;color:var(--muted);overflow-wrap:anywhere}
+.sugg .none{padding:10px 12px;color:var(--muted);font-size:13px}
+.summary{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:1px;background:var(--line);border:1px solid var(--line);border-radius:10px;overflow:hidden}
+.summary div{background:var(--surface);padding:10px 14px}
+.summary .v{font:600 22px/1.1 var(--f-display);font-variant-numeric:tabular-nums}
+.summary .k{font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);font-weight:600}
+.toolbar{display:flex;flex-wrap:wrap;gap:8px}
+.board{display:grid;grid-auto-flow:column;grid-auto-columns:minmax(272px,1fr);gap:12px;overflow-x:auto;padding-bottom:8px;scroll-snap-type:x proximity;align-items:start}
+@media (max-width:640px){.board{grid-auto-columns:86%}}
+.col{background:var(--surface);border:1px solid var(--line);border-radius:10px;box-shadow:var(--shadow);scroll-snap-align:start;min-width:0;display:flex;flex-direction:column}
+.col.over{outline:2px dashed var(--accent);outline-offset:-2px;background:var(--accent-soft)}
+.col.un{background:var(--surface2);border-style:dashed;box-shadow:none}
+.colhead{padding:12px 14px 10px;border-bottom:1px solid var(--line);display:flex;flex-direction:column;gap:8px;border-top:4px solid var(--dc,var(--line));border-radius:10px 10px 0 0}
+.colhead .row{display:flex;justify-content:space-between;align-items:baseline;gap:8px}
+.colhead h3{font-size:22px;line-height:1}
+.colhead .date{color:var(--muted);font-size:12px;text-transform:capitalize}
+.stats{display:grid;grid-template-columns:1fr 1fr;gap:6px 10px}
+.stat .k{font-size:10.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);font-weight:600}
+.stat .v{font:500 14px var(--f-mono);font-variant-numeric:tabular-nums}
+.badge{display:inline-block;border-radius:4px;padding:1px 7px;font-size:11px;font-weight:600}
+.badge.ok{background:var(--ok-soft);color:var(--ok)}
+.badge.bad{background:var(--bad-soft);color:var(--bad)}
+.badge.idle{background:var(--surface2);color:var(--muted)}
+.why{font-size:12px;color:var(--bad)}
+details.hours summary{cursor:pointer;font-size:12px;color:var(--accent);font-weight:600}
+.hoursgrid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-top:8px}
+.hoursgrid .field input{padding:5px 6px}
+.list{padding:10px 10px 12px;display:flex;flex-direction:column;gap:6px;min-height:84px}
+.mark{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--muted);padding:2px 6px}
+.mark .mono{color:var(--ink);font-weight:600}
+.mark.lunch{background:var(--warn-soft);color:var(--warn);border-radius:6px;padding:5px 8px}
+.leg{display:flex;flex-wrap:wrap;align-items:center;gap:2px 8px;font-size:12px;color:var(--muted);padding:2px 6px 2px 18px;border-left:2px dotted var(--line);margin-left:14px;min-height:24px}
+.leg .mono{color:var(--ink)}
+.leg input{width:62px;border:1px solid var(--line);background:var(--surface2);border-radius:5px;padding:2px 5px}
+.leg .est{color:var(--warn)}
+.stop{display:grid;grid-template-columns:auto auto 1fr;gap:4px 8px;align-items:start;border:1px solid var(--line);background:var(--surface);border-radius:8px;padding:8px 8px 8px 4px}
+.stop.off{opacity:.55;background:var(--surface2)}
+.stop.off .nm{text-decoration:line-through}
+.stop.dragging{opacity:.3}
+.grip{touch-action:none;cursor:grab;width:26px;height:34px;display:flex;align-items:center;justify-content:center;color:var(--muted);border-radius:4px}
+.grip:hover{background:var(--surface2)}
+.grip svg{width:14px;height:14px;fill:currentColor}
+.stop input[type=checkbox]{width:20px;height:20px;margin:7px 0 0;accent-color:var(--accent)}
+.stop .body{min-width:0;display:flex;flex-direction:column;gap:3px}
+.stop .nm{font-weight:600;overflow-wrap:anywhere}
+.icao{font:600 11px var(--f-mono);background:var(--accent-soft);color:var(--accent);border-radius:4px;padding:1px 6px;margin-right:6px;vertical-align:1px}
+.stop .times{font:500 12px var(--f-mono);color:var(--muted)}
+.stop .ctl{grid-column:2/-1;display:flex;flex-wrap:wrap;gap:6px 10px;align-items:center;font-size:12px;color:var(--muted)}
+.stop .ctl input[type=number]{width:62px;border:1px solid var(--line);background:var(--surface2);border-radius:5px;padding:2px 5px}
+.stop .ctl input[type=text]{flex:1 1 160px;min-width:0;border:1px solid var(--line);background:var(--surface2);border-radius:5px;padding:3px 6px}
+.stop .ctl select{border:1px solid var(--line);background:var(--surface2);border-radius:5px;padding:2px 4px;max-width:120px}
+.stop .note{grid-column:2/-1;font-size:12px;color:var(--warn)}
+.linkbtn{all:unset;cursor:pointer;color:var(--accent);font-size:12px;text-decoration:underline}
+.linkbtn:focus-visible{outline:2px solid var(--accent)}
+.pin{font-weight:600}
+.empty{color:var(--muted);font-size:13px;padding:10px 6px;text-align:center;border:1px dashed var(--line);border-radius:8px}
+.ghost{position:fixed;z-index:50;pointer-events:none;opacity:.92;box-shadow:0 10px 30px rgba(0,0,0,.28);transform:rotate(1.5deg)}
+.below{display:grid;grid-template-columns:minmax(0,1fr);gap:16px}
+.mapcard{padding:12px 14px;display:flex;flex-direction:column;gap:8px}
+.mapcard h2,.links h2{font-size:20px}
+.mapslot{position:relative;max-width:560px;border:1px solid var(--line);border-radius:8px;overflow:hidden;background:var(--surface2)}
+.leafmap{width:100%;height:320px;background:var(--surface2)}
+.leafmap.big{height:72vh;min-height:320px}
+.mapzoom{all:unset;position:absolute;inset:0;z-index:500;cursor:zoom-in}
+.mapzoom span{position:absolute;right:8px;top:8px;background:var(--surface);color:var(--ink);border:1px solid var(--line);border-radius:6px;padding:3px 8px;font-size:12px;font-weight:600}
+.mapnote{padding:28px 14px;text-align:center;color:var(--muted)}
+.mk{display:flex;align-items:center;justify-content:center;width:24px;height:24px;border-radius:50%;border:2px solid #fff;color:#fff;font:700 12px var(--f-mono);box-shadow:0 1px 4px rgba(0,0,0,.45)}
+.mk.h{border-radius:5px;background:#12202E}
+.mk.off{background:#fff;color:#566879;border:2px dashed #566879}
+.legend{display:flex;flex-wrap:wrap;gap:6px 14px;font-size:12px;color:var(--muted)}
+.legend i{display:inline-block;width:14px;height:4px;border-radius:2px;margin-right:6px;vertical-align:middle}
+.modal{position:fixed;inset:0;z-index:2000;background:rgba(8,14,20,.72);display:flex;align-items:center;justify-content:center;padding:max(16px,env(safe-area-inset-top,0px)) max(16px,env(safe-area-inset-right,0px)) max(16px,env(safe-area-inset-bottom,0px)) max(16px,env(safe-area-inset-left,0px))}
+.modal .inner{background:var(--surface);border-radius:10px;max-width:1100px;width:100%;max-height:100%;overflow:auto;padding:12px;display:flex;flex-direction:column;gap:8px}
+.modal .inner svg{width:100%;height:auto}
+.links{padding:14px;display:flex;flex-direction:column;gap:12px}
+.linkday{display:flex;flex-direction:column;gap:8px;border-top:1px solid var(--line);padding-top:10px}
+.linkday:first-of-type{border-top:0;padding-top:0}
+.linkday .hd{display:flex;align-items:center;gap:8px;font-weight:600}
+.linkday .hd i{width:12px;height:12px;border-radius:3px;background:var(--dc)}
+.navs{display:flex;flex-wrap:wrap;gap:8px}
+.nav{display:inline-flex;align-items:center;gap:6px;text-decoration:none;border-radius:6px;padding:9px 14px;font-weight:600;border:1px solid var(--line);background:var(--surface2);color:var(--ink)}
+.nav.g{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+.nav.a{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+.nav.mini{padding:4px 9px;font-size:12px}
+.wazes{display:flex;flex-wrap:wrap;gap:6px;align-items:center;font-size:12px;color:var(--muted)}
+.foot{font-size:12px;color:var(--muted);max-width:90ch}
+.toast{position:fixed;left:50%;bottom:max(16px,env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:8px 14px;border-radius:8px;z-index:3000;font-size:13px;max-width:90vw}
+@media (min-width:980px){.below{grid-template-columns:minmax(0,560px) minmax(0,1fr);align-items:start}}
+@media (prefers-reduced-motion:reduce){*{scroll-behavior:auto!important;transition:none!important}}
+</style>
+</head>
+<body>
+<div class="wrap" id="app"></div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script>
+var AIRFIELDS=[["LECO","A Coruña Airport","Culleredo",43.3021,-8.37726,"a"],["LEMD","Adolfo Suárez Madrid–Barajas Airport","Madrid",40.49341,-3.57225,"a"],["","AeroCieza","",38.32305,-1.45697,"a"],["","AeroNiebla","Niebla",37.34972,-6.68389,"a"],["","AeroSidonia","",36.44026,-5.94093,"a"],["","AeroVeleta ULM","Caparacena, Granada",37.29475,-3.71287,"a"],["","Aeroclub Alto Palancia","Sot de Ferrer",39.79781,-0.41832,"a"],["","Aeroclub Arnao UL","Arnao",43.55317,-7.0168,"a"],["","Aeroclub Cáceres","La Cervera",39.32917,-6.34361,"a"],["","Aeroclub Gregal","Albalat de la Ribera",39.22046,-0.36825,"a"],["","Aeroclub L’Estartit","Estartit",42.03103,3.17933,"a"],["LELG","Aeroclub Mar Menor","San Javier",37.84528,-0.88111,"a"],["LETX","Aeroclub Totana","Totana",37.75308,-1.4487,"a"],["","Aeroclub de Barbastro","Barbastro",41.99425,0.09215,"a"],["","Aerodrom Tapioles","Tortellà",42.22548,2.61589,"a"],["","Aerodromo El Busto","Santa Maria del Páramo",42.34463,-5.80348,"a"],["","Aerodromo El Judio","",37.84039,-4.70966,"a"],["","Aerodromo Vistabella del Maestrat","Vistabella del Maestrat",40.33185,-0.30063,"a"],["","Aerodromo de Sesma","Sesma",42.42525,-2.0272,"a"],["","Aerodromo de Sevares","Piloña",43.36372,-5.24199,"a"],["LEWG","Aerodromo de Villanueva de Gallego","Villanueva de Gallego",41.7856,-0.84803,"a"],["","Aerodrómo de Sanchidrián","Sanchidrián",40.89995,-4.60962,"a"],["","Aerodrómo de la Calderina","",39.29629,-3.83115,"a"],["","Aeroguillena","Guillena",37.56124,-6.03082,"a"],["LEAH","Aerohíspalis","Mairena del Alcor",37.3297,-5.72278,"a"],["","Aeròdrom Municipal El Pla de Santa María","El Pla de Santa María",41.37147,1.30375,"a"],["","Aeròdrom d'Avinyonet","Avinyó Nou",41.36798,1.76687,"a"],["","Aeròdrom de Cervera","Cervera",41.6876,1.25049,"a"],["","Aeròdrom de Foixà","Foixà",42.02993,2.99076,"a"],["","Aeròdrom de Llabiá","Llabiá",42.0118,3.08948,"a"],["","Aeròdrom de Pals","",42.00699,3.15192,"a"],["","Aeròdrom de Viladamat","Viladamat",42.14284,3.05114,"a"],["","Aeròdrom del Pla de Bages","Sallent",41.77759,1.89036,"a"],["","Aeródrome de Arcones","Arcones",41.11453,-3.73378,"a"],["","Aeródromo  Forestal Villaviciosa de Córdoba","",38.05406,-5.04182,"a"],["","Aeródromo \"Puente de Genave\"","",38.36668,-2.79418,"a"],["","Aeródromo Aerópolis","El Casar de Escalona",40.0208,-4.55827,"a"],["","Aeródromo Alcalá del Río","Alcalá del Río",37.55328,-5.98061,"a"],["","Aeródromo Belvis de Monroy","Belvis de Monroy",39.85136,-5.60153,"a"],["","Aeródromo Benagéber","Benagéber",39.73515,-1.1394,"a"],["LEUN","Aeródromo Calzada de Valdunciel","Calzada de Valdunciel",41.07545,-5.72804,"a"],["","Aeródromo Coria","Coria",39.98462,-6.55455,"a"],["","Aeródromo Coscojuela de Sobrarbe","Ainsa",42.3487,0.18613,"a"],["","Aeródromo Fontioso","Fontioso",41.9333,-3.78481,"a"],["","Aeródromo Forestal \"La Fonfría\"","Villarejo",42.34661,-2.91095,"a"],["","Aeródromo Forestal \"Puebla de Don Rodrigo\"","Puebla de Don Rodrigo",39.06607,-4.4885,"a"],["","Aeródromo Gurrea de Gállego","Gurrea de Gállego",42.03533,-0.7463,"a"],["LEJE","Aeródromo Juan Espadafor","Escúzar",37.0895,-3.78832,"a"],["","Aeródromo La Balanzona","",37.96173,-4.80705,"a"],["","Aeródromo La Loma","Siete Aguas",39.48867,-0.90222,"a"],["","Aeródromo Lanzahita UL","Lanzahita",40.18611,-4.94626,"a"],["","Aeródromo Loring","El Molar",40.6602,-3.59489,"a"],["LEMZ","Aeródromo Mazaricos","Fervenza",42.98233,-9.005,"a"],["","Aeródromo Navalmoral de la Mata","Navalmoral de la Mata",39.91613,-5.53976,"a"],["","Aeródromo Orce","Orce",37.73545,-2.36425,"a"],["","Aeródromo Pelayos de la Presa","Pelayos de la Presa",40.37201,-4.38268,"a"],["LERE","Aeródromo Requena El Rebollar","Requena",39.4747,-1.03444,"a"],["","Aeródromo Tarancón","Tarancón",40.01248,-2.97794,"a"],["","Aeródromo Tiurana","",41.97416,1.25753,"a"],["","Aeródromo Valdetorres","Valdetorres",38.94265,-6.12717,"a"],["","Aeródromo Villanueva del Pardillo","Villanueva del Pardillo",40.50011,-3.9921,"a"],["LEVE","Aeródromo Virgen de La Estrella","Zafra",38.42056,-6.35694,"a"],["","Aeródromo de Alcazarén","Alcazarén",41.37278,-4.69583,"a"],["","Aeródromo de Aldeacentenara","Aldeacentenara",39.56092,-5.66372,"a"],["LETG","Aeródromo de Algodor","Algodor (Toledo)",39.89833,-3.87466,"a"],["","Aeródromo de Almorox","Almorox",40.21163,-4.38676,"a"],["","Aeródromo de Antela","Xinzo de Limia",42.1045,-7.7118,"a"],["","Aeródromo de Antequera","Antequera",37.10165,-4.56257,"a"],["","Aeródromo de Brunete","Brunete",40.39656,-4.02371,"a"],["LERN","Aeródromo de Camarenilla","Camarenilla",40.0247,-4.0712,"a"],["","Aeródromo de Caravaca de la Cruz","",38.0468,-1.92201,"a"],["","Aeródromo de Casinos","Casinos",39.72501,-0.73385,"a"],["LEUC","Aeródromo de Cillamayor","Cillamayor",42.85135,-4.27929,"a"],["","Aeródromo de Espiel","Espiel",38.26287,-5.0442,"a"],["LEFU","Aeródromo de Fuente Obejuna","Fuente Obejuna",38.2818,-5.40184,"a"],["","Aeródromo de Garrucha","",37.19796,-1.83063,"a"],["","Aeródromo de Griñón","Griñón",40.22378,-3.86691,"a"],["","Aeródromo de Guadalix de la SIerra","El Vellón",40.78483,-3.63973,"a"],["LEGU","Aeródromo de Guadalupe","Guadalupe",39.3457,-5.19735,"a"],["LERP","Aeródromo de Herrera de Pisuerga","Herrera de Pisuerga",42.5923,-4.2902,"a"],["LEEN","Aeródromo de Hiendelaencina-Alto Rey","Hiendelaencina",41.10827,-2.98597,"a"],["","Aeródromo de Jaen - Las Infantas","Jaen",37.90858,-3.80016,"a"],["","Aeródromo de La Ina","",36.62949,-6.01826,"a"],["","Aeródromo de La Salceda","",41.06474,-3.88266,"a"],["LEDB","Aeródromo de La Vid de Bureba","La Vid de Bureba",42.63204,-3.31146,"a"],["","Aeródromo de Linares","Linares",38.13321,-3.64255,"a"],["","Aeródromo de Loja","Loja",37.13775,-4.26985,"a"],["","Aeródromo de Navianos de Valverde","",41.95914,-5.83504,"a"],["","Aeródromo de Ordis","Ordis",42.2325,2.88694,"a"],["","Aeródromo de Piedrahita","Piedrahita",40.47986,-5.36068,"a"],["","Aeródromo de Pozo-Cañada","Pozo-Cañada",38.79776,-1.7603,"a"],["","Aeródromo de Reboira","Reboira",43.17821,-7.04944,"a"],["LEMY","Aeródromo de Royanejos","",38.97992,-6.34517,"a"],["LESN","Aeródromo de San Torcuato","San Torcuato",42.47423,-2.87274,"a"],["LESZ","Aeródromo de Sigüenza","Sigüenza",41.04479,-2.62921,"a"],["","Aeródromo de Sober","Sober",42.4324,-7.48872,"a"],["","Aeródromo de Sonseca","Sonseca",39.69324,-3.93307,"a"],["","Aeródromo de Tardienta - Monegros","",41.95991,-0.54349,"a"],["","Aeródromo de Trasmirás","Trasmirás",42.05177,-7.59863,"a"],["","Aeródromo de Treviño","Treviño",42.72127,-2.67839,"a"],["","Aeródromo de Tudela","",42.10926,-1.68698,"a"],["LEUT","Aeródromo de Utrera","Utrera",37.15342,-5.79888,"a"],["","Aeródromo de Valdeazores","Valdeazores",39.49057,-4.66129,"a"],["","Aeródromo de Valdelaguna","Valdelaguna",40.15787,-3.38066,"a"],["","Aeródromo de Valverde del Camino","Valverde del Camino",37.5056,-6.70245,"a"],["","Aeródromo de Velada","Velada",40.01051,-4.94632,"a"],["","Aeródromo de Villa María","Coy (Lorca)",37.9273,-1.77515,"a"],["","Aeródromo de Villaconejos","Villaconejos",40.09698,-3.50835,"a"],["","Aeródromo de Villoldo","Villoldo",42.2655,-4.6479,"a"],["","Aeródromo de la Curiscada","Tineo",43.33302,-6.3785,"a"],["","Aeródromo de la Guardia","La Guardia",39.7709,-3.60472,"a"],["LEOS","Aeródromo de los Oteros","Pajares de Los Oteros",42.33306,-5.45194,"a"],["","Aeródromo de Écija","Écija",37.58023,-5.17126,"a"],["","Aeródromo el Maíllo","",40.57117,-6.21882,"a"],["","Aeródromo forestal \"Requena 2\"","Requena",39.44226,-1.04935,"a"],["","Aeródromo forestal de Ademuz","Ademuz",40.09146,-1.21047,"a"],["","Aeródromo forestal de Enguera","Enguera",38.94317,-0.76915,"a"],["","Aeródromo forestal de Herrera del Duque","Herrera del Duque",39.22644,-4.88638,"a"],["","Aeródromo forestal de La Yesa","La Yesa",39.90904,-0.94862,"a"],["LEOA","Aeródromo forestal de Mojados","Mojados",41.46573,-4.71307,"a"],["","Aeródromo privado \"Villamartin2\"","Villamartin",36.82713,-5.60321,"a"],["","Ager Altiport","",42.02277,0.7491,"a"],["LEIR","Air Marugán","Marugán",40.9111,-4.37092,"a"],["","Aires de Doñana","Almonte",37.25689,-6.5629,"a"],["","Airfield Verín-Oímbra Forest Fire Base","Verin",41.84261,-7.42873,"a"],["","Alats Club Bellvei","Bellvei",41.24434,1.56329,"a"],["LEAB","Albacete Airport / Los Llanos Air Base","Albacete",38.9485,-1.86352,"a"],["","Albalat de la Ribera Airstrip","Albalat de la Ribera",39.22616,-0.36658,"a"],["","Alcalá de la Jovada Airstrip","Alcalá de la Jovada",38.78661,-0.23106,"a"],["LERI","Alcantarilla Air Base","Alcantarilla",37.9511,-1.23032,"a"],["","Alcocer de Planes Airfield","Alcocer de Planes",38.7914,-0.39859,"a"],["LEAE","Alcolea Airstrip","Alcolea",37.94562,-4.61542,"a"],["","Alcolea de Cinca","Alcolea de la Cinca",41.73422,0.10758,"a"],["LELH","Alhama De Murcia Airfield","Cánovas",37.7489,-1.30216,"a"],["","Alhama de Granada Airfield","Alhama de Granada",36.997,-4.10361,"a"],["LEAL","Alicante-Elche Miguel Hernández Airport","Alicante",38.2822,-0.55816,"a"],["LEAM","Almería Airport","Almería",36.8439,-2.3701,"a"],["","Alt Camp de Vallmoll","",41.24992,1.24147,"a"],["LEGC","Altarejos-Guadalcanal Private Airfield","Sevilla",38.1717,-5.73953,"a"],["","Alto Vinalopó Biar Benejama","Beneixama",38.68443,-0.7603,"a"],["LEAP","Ampuriabrava Airfield","Empuriabrava",42.26031,3.10962,"a"],["LEGA","Armilla Air Base","Armilla",37.1332,-3.63569,"a"],["LEAS","Asturias Airport","Ranón",43.5636,-6.03462,"a"],["","Atlas Center Vuelos de Drones","",38.13923,-3.17387,"a"],["LEBZ","Badajoz Airport","Badajoz",38.8913,-6.82133,"a"],["","Base Aérea Las Navas","Medina de Pomar",42.95364,-3.47377,"a"],["","Base BRICA de Cártama","Cártama",36.72279,-4.70045,"a"],["","Base de Bomberos del Amogable","Covaleda",41.86177,-2.94989,"a"],["","Base de aviones \"La Cerra\"","Villanueva de Duero",42.5213,-4.85548,"a"],["LEBI","Beariz Airfield Forest Fire Base","Concello de Beariz, Ourense",42.4612,-8.3398,"a"],["","Beas Airstrip","",37.41816,-6.76054,"a"],["LEBE","Beas de Segura Airfield","Jaén",38.27195,-2.95291,"a"],["LENA","Benabarre Airfield","Huesca",42.0228,0.48222,"a"],["","Benejama UL","Beneixama",38.69619,-0.74494,"a"],["","Benicolet Airfield","Benicolet",38.9187,-0.35568,"a"],["","Beteta Airfield","Beteta",40.54057,-2.07685,"a"],["","Beuda Besalu Private Airstrip","",42.21147,2.70928,"a"],["LEBB","Bilbao Airport","Bilbao",43.3011,-2.91061,"a"],["LEIS","Binissalem Airfield","Binissalem",39.68105,2.87728,"a"],["LEBF","Binéfar Airfield","Binéfar",41.85389,0.25475,"a"],["LEBG","Burgos Airport","Burgos",42.3576,-3.62076,"a"],["","Cabezas Rubias Airstrip","",37.74823,-7.0967,"a"],["LECF","Calaf-Sallavinera Airfield","Sant Pere Sallavinera",41.7442,1.55694,"a"],["","Camaleño-Artañin ULM","Argüébanes",43.17817,-4.67496,"a"],["","Camp de Vol de Palafolls","",41.68722,2.74806,"a"],["","Camp de vol La Puieda","Gurb",41.98829,2.25617,"a"],["","Campillos Airfield","Campillos-Paravientos",39.94118,-1.53596,"a"],["LETU","Campo de Aviación de Ablitas","",42.00328,-1.62032,"a"],["","Campo de Aviación de Peralveche","Peralveche",40.60252,-2.42935,"a"],["","Campo de Vuelo Aliaguilla","",39.7585,-1.33642,"a"],["","Campo de Vuelo Avial","Berga",42.07738,1.84023,"a"],["LEPN","Campo de Vuelo Casimiro Patiño","Valverde de Leganés",38.70578,-6.99975,"a"],["","Campo de Vuelo Moixent-Mogente","Mogente / Moixent",38.81702,-0.83314,"a"],["","Campo de Vuelo Yecla","Yecla",38.58759,-1.105,"a"],["LEAT","Campo de Vuelo de Astorga","Astorga",42.504,-6.0267,"a"],["","Campo de Vuelo de Caspe","Caspe",41.22877,-0.08588,"a"],["","Campo de Vuelo de Oteo","Oteo",43.01687,-3.31203,"a"],["","Campo de vuelo de Villanueva del Trabuco","Villanueva del Trabuco",37.06343,-4.33034,"a"],["","Capdepera Aerodrom","",39.69211,3.40638,"a"],["","Carreras de Galgos Airstrip","Galgos de Villarrubia de los Ojos",39.2007,-3.5988,"a"],["LEMT","Casarrubios Del Monte Airfield","Toledo",40.235,-4.02639,"a"],["","Casas de Juan Gil Airfield","Carcelén",39.133,-1.2622,"a"],["LEPI","Casas de los Pinos Airfield","Casas de los Pinos",39.2982,-2.37872,"a"],["","Castejón de Sos Airfield","Castejón de Sos",42.52247,0.48111,"a"],["","Castejón de Sos field","Castejón de Sos",42.52247,0.48111,"a"],["LECN","Castellon de la Plana Aerodrome","Castellón de la Plana",39.99836,0.02635,"a"],["LECH","Castellón-Costa Azahar Airport","Castellón de la Plana",40.21389,0.07333,"a"],["","Castriz/Cambe Airfield","Santa Comba",43.1025,-8.7617,"a"],["","Chaira Airfield","Baños de Molgas",42.23282,-7.6448,"a"],["LEZS","Chozas de Abajo Airfield","",42.49721,-5.68267,"a"],["LERL","Ciudad Real International Airport","Ciudad Real",38.85648,-3.96994,"a"],["","Club Aernautic Catalunya","",41.75028,2.61139,"a"],["","Club Fenix ULM","",39.6576,-0.81163,"a"],["","Cocoll Firefighting Airstrip","Castell de Castells",38.73217,-0.14405,"a"],["GCRR","César Manrique-Lanzarote Airport","San Bartolomé",28.9455,-13.6052,"a"],["","Cóbreces Airfield","Cóbreces",43.38852,-4.20775,"a"],["LEBA","Córdoba Airport","Córdoba",37.842,-4.84888,"a"],["LEDE","Córdoba-Villarrubia Airfield","Córdoba",37.83663,-4.89643,"a"],["","Devils of the Air RC Model Club Airport","Teguise (Lanzarote)",29.03271,-13.59853,"a"],["","Don Benito","",38.97847,-5.866,"a"],["LEEV","E. Castellanos-Villacastín Airfield","Villacastin",40.7839,-4.46278,"a"],["","Ecija 2 private airfield","Ecija",37.51426,-5.12135,"a"],["","Ecija 3 private airfield","Cañada Rosal",37.54747,-5.17606,"a"],["","Eivissa private Airstrip","",38.96978,1.43786,"a"],["","El Arenosilllo Airstrip","Moguer",37.09727,-6.73394,"a"],["","El Barranco - Sierra Morena","Bailén (Jaén)",38.03774,-3.76585,"a"],["GCLB","El Berriel Aeroc Airport","Gran Canaria Island",27.7825,-15.5072,"a"],["","El Bonillo Airfield","El Bonillo",38.8727,-2.6733,"a"],["LEVB","El Carrascal Airfield","Valladolid",41.8247,-4.89306,"a"],["LECT","El Castaño Airfield","Luciana",39.0136,-4.38714,"a"],["","El Ejido UL","El Ejido",36.74412,-2.76748,"a"],["GCHI","El Hierro Airport","El Hierro Island",27.8148,-17.8871,"a"],["LEEM","El Manantío Airfield","Badajoz",38.77751,-6.99112,"a"],["LEML","El Membrillar","",39.39256,-4.73449,"a"],["LELI","El Molinillo Airfield","Almendralejo",38.73995,-6.39189,"a"],["","El Moral Airstrip","",38.48584,-6.26341,"a"],["LEGP","El Rinconcillo de Guadalupe","",39.59413,-6.20628,"a"],["LETI","El Tietar Airfield","La Iglesuela",40.2439,-4.79444,"a"],["LEGR","F.G.L. Airport Granada-Jaén Airport","Granada",37.1887,-3.77736,"a"],["","Folgueroles Airfield","Folgueroles",41.9527,2.3072,"a"],["","Fresno de Losa Airstrip","",42.95347,-3.15312,"a"],["","Fuentealamo Airfield","Chinchilla de Montearagón",38.7155,-1.54509,"a"],["LEFM","Fuentemilanos Airfield","Segovia",40.88914,-4.24017,"a"],["","Fuenterrobles","",39.56601,-1.36225,"a"],["GCFV","Fuerteventura Airport","El Matorral",28.4527,-13.8638,"a"],["LEGY","Garray Airfield","Soria",41.82,-2.47639,"a"],["LEGT","Getafe Air Base","Getafe",40.2941,-3.72383,"a"],["LEGE","Girona-Costa Brava Airport","Girona",41.90464,2.76177,"a"],["","Godos Airfield","Caldas de Reis",42.5787,-8.6968,"a"],["GCLP","Gran Canaria Airport","Gran Canaria Island",27.9319,-15.3866,"a"],["","Guadix","",37.41262,-3.07576,"a"],["","Gérgal Aerodrome","Gérgal",37.12557,-2.59557,"a"],["","Hacienda de Orán","Utrero",37.20004,-5.88085,"a"],["LEHC","Huesca-Pirineos Airport","Monflorite/Alcalá del Obispo",42.0761,-0.31667,"a"],["LEIB","Ibiza Airport","Ibiza (Eivissa)",38.8729,1.37312,"a"],["LEIG","Igualada/Odena Airfield","Barcelona",41.5856,1.65306,"a"],["","Isla Cristina Agricultural Airstrip","Isla Cristina",37.24211,-7.31765,"a"],["GCAT","Jarde Airport","Antigua",28.39119,-13.98297,"a"],["","Jayena Airfield","Jayena",36.9307,-3.83538,"a"],["LEJR","Jerez Airport","Jerez de la Frontera",36.7446,-6.06011,"a"],["LEBL","Josep Tarradellas Barcelona-El Prat Airport","Barcelona",41.2971,2.07846,"a"],["LEAX","La Axarquía-Leoni Benabu Airfield","Málaga",36.80167,-4.13556,"a"],["LELA","La Calderera Airfield","Valdepeñas",38.7479,-3.51456,"a"],["LENE","La Caminera Airfield","",38.66973,-3.30319,"a"],["LENN","La Centenera","Marmolejo",38.11489,-4.11547,"a"],["LECD","La Cerdanya Airfield","Alp",42.3864,1.86667,"a"],["LEDC","La Cuesta Aerodrome","La Cuesta",38.53092,-2.83251,"a"],["","La Font de la Figuera Airstrip","",38.78678,-0.8763,"a"],["","La Gineta ULM","La Gineta",39.10577,-2.01628,"a"],["GCGM","La Gomera Airport","Alajero, La Gomera Island",28.0296,-17.2146,"a"],["LEJU","La Juliana Airfield","Sevilla",37.295,-6.1625,"a"],["","La Llosa Airfield","La Llosa",39.74979,-0.18135,"a"],["LEMX","La Mancha-Toledo Airfield","Toledo",39.5621,-3.25075,"a"],["","La Montaña ULM","Alcocer de Planes",38.80213,-0.39842,"a"],["LEMR","La Morgal Airfield","Oviedo",43.4292,-5.83056,"a"],["LECA","La Nava - Corral De Ayllón Airfield","Corral de Ayllón",41.4108,-3.44833,"a"],["GCLA","La Palma Airport","Sta Cruz de la Palma, La Palma Island",28.6265,-17.7556,"a"],["LEIZ","La Perdiz - Torre De Juan Abad Airfield","Torre de Juan Abad",38.5131,-3.36433,"a"],["","La Segarra Airfield","Sant Guim de Freixenet",41.68129,1.41427,"a"],["","Las Cañadillas Airfield","Molinicos",38.50124,-2.27088,"a"],["","Las Torres de Aliste","",41.68315,-6.30767,"a"],["","Lebrija UL","Lebrija",36.89614,-6.03937,"a"],["","Les Planes UL","Ulldecona",40.62044,0.47998,"a"],["LELN","León Airport","La Virgen del Camino",42.59071,-5.65341,"a"],["LELT","Lillo Airfield","Lillo",39.7169,-3.32056,"a"],["LEDA","Lleida-Alguaire Airport","Lleida",41.72819,0.53502,"a"],["LERJ","Logroño-Agoncillo Airport","Logroño",42.46095,-2.32224,"a"],["LEMP","Los Martínez Del Puerto Airfield","Murcia",37.83682,-1.09767,"a"],["LEPZ","Los Pozuelos de Calatrava Airfield","Los Pozuelos de Calatrava, Ciudad Real",38.91168,-4.18973,"a"],["LEUM","Lumbier Airfield","Lumbier",42.66476,-1.30404,"a"],["LECU","Madrid-Cuatro Vientos Airport","Madrid",40.3707,-3.78514,"a"],["LETO","Madrid–Torrejón Airport / Torrejón Air Base","Madrid",40.48788,-3.45681,"a"],["LEJO","Madrigalejo Del Monte Airfield","Madrigalejo Del Monte",42.1344,-3.73103,"a"],["LEMF","Mafé - Gibraleón Airfield","Gibraleón",37.3643,-6.92094,"a"],["LEMS","Manresa Airfield","Manresa",41.7653,1.86167,"a"],["","Martinamatos Airfield","Santa Cruz del Retamar",40.09941,-4.29508,"a"],["LETC","Matilla De Los Caños Airfield","Valladolid",41.5306,-4.925,"a"],["GEML","Melilla Airport","Melilla",35.2798,-2.95626,"a"],["LEMH","Menorca Airport","Mahón (Maó)",39.8626,4.21865,"a"],["","Moià Les Umbertes","Moià",41.78682,2.12978,"a"],["","Mollerussa UL","Mollerussa",41.6122,0.85412,"a"],["LENF","Monforte Airfield","Monforte de Lemos",42.547,-7.5191,"a"],["LETE","Morante Airfield","Badajoz",39.0369,-6.69056,"a"],["LEMO","Moron Air Base","Morón",37.1749,-5.61594,"a"],["LEMU","Muchamiel Airfield","Muchamiel",38.4406,-0.47528,"a"],["LEMG","Málaga-Costa del Sol Airport","Málaga",36.67823,-4.50021,"a"],["LEOC","Ocaña Airfield","Ocaña",39.9375,-3.50333,"a"],["","Olocau Airfield","Olocau",39.67552,-0.54885,"a"],["","Olula del Río","Olula del Río",37.36254,-2.33197,"a"],["","Ondara Airstrip","Ondara",38.81074,0.00266,"a"],["LEOT","Ontur Airfield","Ontur",38.61568,-1.52648,"a"],["","Ororbia Airfield","Ororbia",42.82221,-1.73511,"a"],["LEPA","Palma de Mallorca Airport","Palma de Mallorca",39.5517,2.73881,"a"],["","Palma del Rio 2 UL","Palma del Rio",37.6685,-5.26209,"a"],["LEPR","Palma del Río Airfield","Palma del Rio",37.71438,-5.21523,"a"],["LEPP","Pamplona Airport","Pamplona",42.77,-1.64633,"a"],["LESU","Pirineus - la Seu d'Urgel Airport","La Seu d'Urgell Pyrenees and Andorra",42.3386,1.40917,"a"],["","Pista Forestal Valdelamusa","Valdelamusa",37.77632,-6.88267,"a"],["","Pista forestal de Fuencaliente","Fuencaliente",38.52643,-4.38962,"a"],["","Portocristo Airstrip","Manacor",39.55833,3.32024,"a"],["LEPC","Pozorrubio Airfield","Pozorrubio",39.82622,-2.95309,"a"],["","Prat de la Plana Airfield","Moià",41.80016,2.11206,"a"],["","Prádanos de Ojeda Airstrip","",42.69216,-4.34864,"a"],["","Pueblonuevo de Miramontes Airstrip","Pueblonuevo de Miramontes",40.05908,-5.36334,"a"],["LEMI","Region of Murcia International Airport","Corvera",37.80285,-1.12488,"a"],["LERS","Reus Airport","Reus",41.14751,1.16835,"a"],["","Riola Agro Airstrip","Riola",39.18074,-0.33846,"a"],["LERM","Robledillo De Mohernando Airfield","Robledillo De Mohernando",40.8653,-3.24778,"a"],["","Ronda","Ronda",36.73786,-5.11412,"a"],["LESI","Rosinos de la Requejada Airfield","Santiago de la Requejada",42.0981,-6.5262,"a"],["LERT","Rota Naval Station Airport","Rota",36.6452,-6.34946,"a"],["LERO","Rozas Airfield","Lugo",43.11598,-7.46364,"a"],["","Ruidera","Ruidera",39.03695,-2.89465,"a"],["","Ruidera2","Ruidera",39.02495,-2.91193,"a"],["LELL","Sabadell Airfield","Sabadell",41.5209,2.10508,"a"],["LESA","Salamanca Airport","Salamanca",40.9521,-5.50199,"a"],["LESE","San Enrique Airfield","Almodóvar del Campo",38.7308,-4.31306,"a"],["LELC","San Javier Airport","San Javier",37.775,-0.81239,"a"],["LESO","San Sebastián Airport","Hondarribia",43.3565,-1.79061,"a"],["LESL","Sant Lluis Airfield","Sant Lluis",39.86188,4.25174,"a"],["LECI","Santa Cilia de Jaca Airfield","Huesca",42.5692,-0.72778,"a"],["","Santa Cruz de la Zarza Airstrip","",39.97675,-3.19752,"a"],["","Santa Eulària des Riu Airfield","Santa Eulària des Riu",38.99045,1.5035,"a"],["","Santiago-Pontones Airstrip","",38.09099,-2.64843,"a"],["LEST","Santiago-Rosalía de Castro Airport","Santiago de Compostela",42.8963,-8.41514,"a"],["LETP","Santo Tome Del Puerto Airfield","Segovia",41.2042,-3.59472,"a"],["","Ses Salines (S’Olivó) Airfield","Ses Salines",39.34675,3.0572,"a"],["LEXJ","Seve Ballesteros-Santander Airport","Santander",43.4271,-3.82001,"a"],["LEZL","Seville Airport","Seville",37.418,-5.89311,"a"],["","Sollana Agro Airstrip","Sollana",39.27061,-0.36493,"a"],["","Son Albertí Airfield","Llucmajor",39.40064,2.86062,"a"],["LESB","Son Bonet Airfield","Marratxí",39.5989,2.70278,"a"],["","Sotillo de la Andrada","",41.27115,-3.63005,"a"],["LESS","Sotos Airfield","Sotos",40.2042,-2.14389,"a"],["","Taragudo Airfield UL","Taragudo",40.82177,-3.09347,"a"],["GCXO","Tenerife Norte-Ciudad de La Laguna Airport","Tenerife",28.48275,-16.34171,"a"],["GCTS","Tenerife Sur Airport","Tenerife",28.0445,-16.5725,"a"],["","Terrinches Agro Airstrip","Terrinches",38.61471,-2.85748,"a"],["LETL","Teruel Airport","Teruel",40.41027,-1.21737,"a"],["LETY","Tinajeros Airfield","Tinajeros",39.09825,-1.72071,"a"],["LETF","Tomás Fernández Espada Airfield","Villamartin",36.87179,-5.64877,"a"],["LETZ","Torozos Airfield","Valladolid",41.7853,-4.86473,"a"],["","Torremocha de Jiloca Airfield","Torremocha de Jiloca",40.6032,-1.265,"a"],["LETJ","Trebujena Airfield","Trebujena",36.85889,-6.13917,"a"],["","ULM de Dolores","",38.15736,-0.77791,"a"],["","Ultralight Aeroclub Müller","Vera",37.26076,-1.85236,"a"],["","Valdemorillo Airstrip","Valdemorillo",40.48559,-4.05078,"a"],["","Valdenuño-Fernandez Airstrip","",40.76632,-3.35485,"a"],["LEVP","Valdepeñas Airfield","Valdepeñas",38.79231,-3.37154,"a"],["LEVC","Valencia Airport","Valencia",39.48916,-0.48096,"a"],["LEVD","Valladolid Airport","Valladolid",41.7061,-4.85194,"a"],["","Valle Amblés","El Fresno",40.60472,-4.79028,"a"],["LEVY","Vicente Huerta Airfield","Viver",39.95368,-0.62249,"a"],["LEVX","Vigo Airport","Vigo",42.2318,-8.62677,"a"],["LEPT","Vilafranca de Bonany-Es cruce Airfield (Aerodromo Mallorca)","Petra Pep Mercader",39.5768,3.12465,"a"],["LEVF","Villaframil Airfield","Ribadeo, Lugo",43.5525,-7.08778,"a"],["LEVJ","Villafranca de Cordoba","",37.93671,-4.53263,"a"],["LEVL","Villamarco UL","",42.45175,-5.28708,"a"],["","Villanueva de la Cañada Airfield","Villanueva de la Cañada",40.43658,-4.02499,"a"],["","Villaumbrales UL","Villaumbrales",42.09528,-4.5954,"a"],["","Vinaròs Airfield","Vinaròs",40.51972,0.39028,"a"],["LEVT","Vitoria Airport","Alava",42.8828,-2.72447,"a"],["","Xeraco Airfield","Xeraco",39.02578,-0.20775,"a"],["","Zalduendo ULM","Zalduondo",42.8736,-2.33744,"a"],["LEZG","Zaragoza Airport","Zaragoza",41.6662,-1.04155,"a"],["GCAD","Adeje Heliport","Adeje",28.12417,-16.74291,"h"],["","Airbus Helicopters España","Albacete",38.94278,-1.87751,"h"],["","Albacete University Hospital (FATO) Heliport","Albacete",38.9823,-1.8444,"h"],["","Alborán Helistrip","Almería",35.93932,-3.03519,"h"],["LENT","Alcoba de Los Montes Heliport","Alcoba",39.26725,-4.49041,"h"],["LEHA","Alcorcón Hospital Heliport","Alcorcón",40.3497,-3.83819,"h"],["LEAF","Alcorisa Forestry Heliport","Teruel",40.89814,-0.39639,"h"],["","Algeciras Caravan Park Helipad","Algeciras",36.13568,-5.44475,"h"],["LEAG","Algeciras Heliport","Algeciras",36.12882,-5.44108,"h"],["LEAO","Almagro Helicopter Airbase","Almagro",38.9521,-3.74113,"h"],["LEHV","Alvaro Cunqueiro Hospital Helipad.","Vigo",42.1878,-8.71409,"h"],["","As Pontes - Medical Heliport","As Pontes, Galicia, Spain",43.45399,-7.85429,"h"],["LEPB","Autoridad Portuaria de Barcelona Heliport","Barcelona",41.3643,2.18301,"h"],["LEBP","BP Oil España Heliport","Castellón de La Plana",39.9579,-0.01163,"h"],["","Banco de España Helipad","Madrid",40.41791,-3.69492,"h"],["","Barco de Valdeorras Heliport","Ourense",42.43415,-6.97206,"h"],["LEBT","Basa Aérea de Valencia-Bétera","Bétera",39.62447,-0.47258,"h"],["LECV","Base Aérea de Colmenar Viejo","Colmenar Viejo",40.6973,-3.76326,"h"],["LEEC","Base Aérea de El Copero","Dos Hermanas",37.31316,-5.99906,"h"],["","Base de Helicópteros de Guadramiro","Guadramiro",41.01117,-6.4776,"h"],["LEBK","Becerrea Forest Fire Base Heliport","Becerrea",42.8652,-7.18761,"h"],["","Bellús Reservoir Heliport","Bellús",38.93857,-0.48264,"h"],["LERG","Berga Heliport","Berga",42.10481,1.85812,"h"],["LEFB","Blancos del Coscojar Heliport","Blancos del Coscojar",40.3216,-1.05663,"h"],["","Bunyola Private Heliport","Marratxí",39.65771,2.72726,"h"],["LEBU","Bustarviejo Heliport","Bustarviejo",40.85692,-3.74214,"h"],["LEZA","C.I. de Laza Heliport","Verín",42.06904,-7.47494,"h"],["","Cabrera Helipad","",39.143,2.9376,"h"],["","Cadalso de los Vidrios Heliport","28640 Cadalso de los Vidrios",40.30569,-4.44328,"h"],["","Cal Majoral Hotel Heliport","Berga",42.05345,1.74234,"h"],["LENB","Cala'n Blanes Heliport","Ciutadella de Menorca",39.99684,3.8141,"h"],["","Camarinal Helicopter Base","Cadiz",36.08242,-5.79672,"h"],["","Campiño Forest Fire Base Heliport","Pontevedra",42.40801,-8.5878,"h"],["LEGV","Campo Gaviota Heliport","",43.4417,-2.75361,"h"],["LEBS","Can Bonastre Wine Resort Heliport","Masquefa",41.50769,1.78771,"h"],["","Cartagena Helicopter Base","",37.6975,-0.84206,"h"],["LECC","Cas Curredó Heliport","Santa Eulària des Riu",38.9291,1.46633,"h"],["","Casas de Juan Núñez Heliport","Casas de Juan Núñez",39.1103,-1.5578,"h"],["","Casas de Lázaro Heliport","Casas de Lázaro",38.7748,-2.2432,"h"],["","Castromaior Forest Fire Base Heliport","Abegondo",43.17296,-8.33072,"h"],["","Cella Emergency Heliport","Cella",40.45859,-1.28498,"h"],["GECE","Ceuta Heliport","Ceuta",35.89266,-5.30632,"h"],["GECT","Ceuta Military Heliport","Ceuta",35.88902,-5.34635,"h"],["","Ciudad Real University Hospital Heliport","Ciudad Real",38.97094,-3.9328,"h"],["","Cogullada Heliport","Zaragoza",41.69046,-0.84889,"h"],["","Coll de Rates Helipad","Parcent",38.72374,-0.06119,"h"],["","Compass Rose - Torre de Hercules - Emergency Helipad","A Coruña",43.3866,-8.4077,"h"],["LEBC","Costa Brava-Centro Heliport","Girona",41.80696,3.03645,"h"],["LEPV","Costa Norte-Puerto de Viveiro-Celeiro Heliport","Vivero",43.6748,-7.59523,"h"],["LEET","Cueto Firefighting Heliport","Ponferrada",42.6329,-6.64856,"h"],["","Daroca Heliport","Daroca",41.13216,-1.41989,"h"],["LEDG","Dirección General de Tráfico Heliport","Madrid",40.4493,-3.64613,"h"],["","Doctor Negrín Hospital Heliport","Las Palmas de Gran Canaria",28.12217,-15.44347,"h"],["LEBD","El Bodon Heliport","Salamanca",40.48456,-6.57714,"h"],["","El Cabril Heliport","El Cabril",38.07598,-5.41477,"h"],["LEEL","El Musel Heliport","Gijón",43.54973,-5.69545,"h"],["LEPY","El Portinyol Heliport","Barcelona",41.5835,2.56079,"h"],["LEPJ","El Pueyo de Jaca Heliport","Jaca",42.71644,-0.30013,"h"],["","Esporles Private Helipad","Esporles",39.67124,2.55311,"h"],["","Estepona Airfield","Estepona",36.49563,-5.17816,"h"],["LEFR","Fira M2 Heliport","Barcelona",41.3539,2.12917,"h"],["","Formentera Heliport","Sant Francesc Xavier",38.70792,1.43521,"h"],["LEGD","Garidells Heliport","Tarragona",41.2139,1.24156,"h"],["","Grossa Helipad","Castellon",39.89823,0.68412,"h"],["","Guadalajara Heliport","Guadalajara",40.6578,-3.1731,"h"],["","Guillade Heliport","Guillade",42.17088,-8.43643,"h"],["LEJL","Guttmann Hospital Heliport","Canyet",41.47964,2.23849,"h"],["LEMN","Heli Montsiá - Amposta Heliport","Tarragona",40.6664,0.56472,"h"],["","Heliactivo","Benidorm",38.5633,-0.15115,"h"],["LEHE","Helicsa Heliport","Albacete",39.07111,-1.83457,"h"],["","Helipuerto de Campillo de la Jara","",39.60047,-5.05067,"h"],["","Helipuerto de Emergencias de Alzira","Alzira",39.15515,-0.44138,"h"],["","Helipuerto de Sahechores","",42.62011,-5.19233,"h"],["","Helipuerto de Segovia","",40.92344,-4.17346,"h"],["","Helipuerto de Xàtiva","Xàtiva",39.00541,-0.51038,"h"],["LEHH","Henares Hospital Heliport","Coslada",40.41952,-3.53232,"h"],["LENM","Hospital Can Misses Heliport","Ibiza (Eivissa)",38.9175,1.41944,"h"],["LEDO","Hospital Doce de Octubre Heliport","Madrid",40.37474,-3.69985,"h"],["LEJT","Hospital Doctor Josep Trueta Heliport","Gerona",41.9979,2.8214,"h"],["LEHG","Hospital General De Catalunya Heliport","",41.4736,2.0425,"h"],["LEHM","Hospital General De Manresa Heliport","Manresa",41.72,1.84056,"h"],["","Hospital Piñor Medical Heliport","Barbadás - Ourense",42.33119,-7.8943,"h"],["","Hospital Provincial de Conxo Medical Heliport","Santiago de Compostela",42.86085,-8.55202,"h"],["LESP","Hospital San Pau Heliport","Barcelona",41.4135,2.17196,"h"],["LEHJ","Hospital Universitario Joan XXIII Heliport","Tarragona",41.1256,1.23813,"h"],["LEJC","Hotel Rey Juan Carlos I Heliport","Barcelona",41.3825,2.10917,"h"],["","Huerta Otea Helipad","Salamanca",40.96446,-5.68369,"h"],["GCLG","IES La Guancha Heliport","Icod de los Vinos",28.37741,-16.64933,"h"],["LEBO","Ibias Park Fire Fighting Heliport","San Antolín de Ibias",43.02707,-6.88433,"h"],["LEHI","Igualada Hospital Helipad","Igualada",41.58839,1.62088,"h"],["","Illas Sisargas Heliport","Mapica",43.3576,-8.84403,"h"],["LELV","Infanta Leonor University Hospital Heliport","Madrid",40.38656,-3.61584,"h"],["GCHG","Insular Hospital Helipad","Las Palmas de Gran Canaria",28.08283,-15.41739,"h"],["","Isla de Tarifa Heliport","Tarifa",36.00288,-5.61118,"h"],["LEIU","Iurreta Heliport","Durango",43.1819,-2.64639,"h"],["LERY","King Juan Carlos Hospital Heliport","Móstoles",40.34043,-3.86951,"h"],["LEAY","La Atalaya Firefighting Heliport","Calzada de Calatrava",38.63432,-3.78953,"h"],["LEER","La Cabrera Heliport","La Cabrera",40.85535,-3.61794,"h"],["LEEX","La Cartuja (Expo 92) Heliport","Seville",37.3993,-6.01067,"h"],["","La Graciosa Heliport","",29.22961,-13.51098,"h"],["","La Línea de la Concepción District Hospital Heliport","La Línea de la Concepción",36.17512,-5.35255,"h"],["","La Roda Sescam Heliport","La Roda",39.1907,-2.1486,"h"],["LELR","Las Rozas Firefighting Heliport","Las Rozas de Madrid",40.52021,-3.88283,"h"],["","Lires Heliport","",42.98154,-9.2372,"h"],["LELK","Lomba Forest Fire Base Heliport","Santa Comba",42.96908,-8.86887,"h"],["","Los Calpes Heliport","Los Calpes",40.07269,-0.58777,"h"],["","Los Llanos Helipad","38768 Los Llanos",28.65657,-17.9159,"h"],["GCXM","Los Rodeos Army Heliport","",28.48384,-16.35126,"h"],["","Los Santos de la Humosa Helipad","Los Santos de la Humosa",40.5072,-3.2526,"h"],["LEZO","Lozoyuela Heliport","C. del Altillo",40.93602,-3.62504,"h"],["","Madroñalejos Forest Fire fighting Heliport","Aznalcóllar",37.53702,-6.29578,"h"],["LEXO","Marroxo Heliport","Ourense",42.47302,-7.50139,"h"],["LEPS","Mas Passamaner Heliport","Reus",41.1859,1.15992,"h"],["GCMP","Maspalomas Station Heliport","ESA Special Station",27.76564,-15.63529,"h"],["","Mateu Órfila Hospital Heliport","Mahón (Maó)",39.88274,4.25225,"h"],["GEHM","Melilla Heliport","Melilla",35.3021,-2.94448,"h"],["","Mofeta Helicopter Base","",36.34737,-5.65463,"h"],["","Montanejos Heliport","Montanejos",40.06123,-0.53067,"h"],["","Montealegre del Castillo Heliport","Montealegre del Castillo",38.7994,-1.3131,"h"],["","Morro Jable Heliport","Morro Jable",28.05214,-14.36124,"h"],["","Naval Station Heliport","Palma de Mallorca",39.54745,2.61979,"h"],["LENH","Nou Hospital De Mataró Heliport","Mataró",41.5608,2.42972,"h"],["GCDC","Nuestra Señora de Candelaria University Hospital Helipad","Santa Cruz de Tenerife",28.44869,-16.28462,"h"],["LEHU","Oviedo Hospital Heliport","Oviedo",43.37721,-5.82638,"h"],["","Palma Hospital Heliport","Palma de Mallorca",39.58385,2.63169,"h"],["LERC","Parc Taulí Heliport","Sabadell",41.55803,2.10875,"h"],["LEOR","Parque De Bomberos De Orriols Heliport","Orriols",42.1322,2.90389,"h"],["LEGS","Parque De Garraf-Sitges Heliport","",41.2739,1.91472,"h"],["","Parque de Bomberos de Cangas de Onís Heliport","Cangas de Onís",43.35014,-5.11164,"h"],["","Pitres Heliport","",36.9329,-3.34045,"h"],["","Platges de Muro Rescue Heliport","Muro",39.79278,3.12514,"h"],["","Portomarin Forest Fire Base Heliport","Portomarin, Galicia, Spain",42.81316,-7.61962,"h"],["","Pulpí Helipad","Pulpí",37.40108,-1.74611,"h"],["","Punta de Europa Hospital Heliport","Algeciras",36.11066,-5.44163,"h"],["","Punta de l'Avançada Heliport","Pollença",39.90505,3.10984,"h"],["GCPU","Puntagorda Heliport","La Palma",28.77882,-17.9957,"h"],["LEQE","Queimadelos Heliport","Vigo",42.21554,-8.42644,"h"],["LERA","R.A.C.C. Heliport","Barcelona",41.3833,2.10833,"h"],["LERB","Rabanal del Camino Firefighting Heliport","León",42.48086,-6.2724,"h"],["LELB","Regional Emergency Center Heliport","Albendea",40.47523,-2.38352,"h"],["","Reina Sofía Hospital Heliport","Tudela,",42.04026,-1.62596,"h"],["LECE","Reus Emergency Center Heliport","Tarragona",41.1337,1.18735,"h"],["","Riazor Beach Emergency Helipad","A Coruña",43.37066,-8.41445,"h"],["","Ribatejada Heliport","Ribatejada",40.6658,-3.3907,"h"],["","Ronda Helicopter Base","",36.76178,-5.17335,"h"],["","Roses Aerial Military Radar Helipad","Roses",42.27827,3.23336,"h"],["","Rota Naval Base Heliport","Cadiz",36.63957,-6.32878,"h"],["LEME","S'Arangi Heliport","Es Mercadal",39.96822,4.09373,"h"],["LEXE","Sabadell Police Heliport","Sabadell",41.55382,2.0664,"h"],["","Salamanca Fire Station Helipad","Salamanca",40.97931,-5.66012,"h"],["","San Fernando Helicopter Base","Cadiz",36.44188,-6.22124,"h"],["LEDV","San Martin Firefighting Heliport","San Martín de Valdeiglesias",40.35773,-4.3761,"h"],["GCGO","San Sebastián de La Gomera Heliport","La Gomera Island",28.0972,-17.1024,"h"],["","San Xoán de Río Forest Fire Base Heliport","",42.38395,-7.30131,"h"],["LEJN","Sant Joan de Reus University Hospital Heliport.","Tarragona",41.14464,1.12506,"h"],["LETM","Sant Martí De Sescorts Heliport","",42.0155,2.31925,"h"],["","Santa Eulalia Emergency Heliport","Santa Eulalia",40.57215,-1.32151,"h"],["","Serracines Heliport","Serracines",40.623,-3.3973,"h"],["LERV","Servei D'Evacuació Del Circuit De Catalunya Heliport","",41.572,2.26203,"h"],["LETA","Servei Generals Del Circuit De Catalunya Heliport","Barcelona",41.574,2.25716,"h"],["","Silleda Forest Fire Base Heliport","Silleda",42.69353,-8.22419,"h"],["","Son Espases Heliport","Palma de Mallorca",39.6093,2.64565,"h"],["","Son Morell Heliport and R/C Field","Cala Morell",40.04684,3.86701,"h"],["LETB","Tabuyo del Monte Firefighting Heliport","León",42.29552,-6.21451,"h"],["LEEI","Talavera de la Reina Heliport","Talavera de la Reina",39.92406,-4.80127,"h"],["","Tejeda Heliport","35369 Tejeda",27.99362,-15.60982,"h"],["LETK","Teknon Medical Center Heliport","Barcelona",41.40662,2.128,"h"],["LETV","Tirviá Heliport","Tirvia",42.5188,1.24231,"h"],["LETS","Torre Picasso Heliport","Madrid",40.44983,-3.69314,"h"],["LETT","Tortosa Verge de la Cinta Hospital Heliport","Tortosa",40.81129,0.52335,"h"],["","Trelle Forest Fire Base Heliport","A Merca, Galicia, Spain",42.26585,-7.94497,"h"],["LETR","Tremp Heliport","Tremp",42.1694,0.89278,"h"],["LEUL","Ullastrell-Teresa Vilá Heliport","Ullastrell",41.5243,1.97158,"h"],["GCHU","Universitario de Canarias Hospital Heliport","Santa Cruz de Tenerife",28.4561,-16.29189,"h"],["","Utrillas Heliport","Utrillas",40.80985,-0.84746,"h"],["LEDH","Vall d'Hebron University Hospital Helipad","Barcelona",41.42701,2.14012,"h"],["LEVH","Vielha Heliport","Carrèr deth Taro, Vielha",42.69713,0.80157,"h"],["","Vigil de Quinones Military Hospital Heliport","Seville",37.3474,-5.9716,"h"],["","Vilaller Heliport","Vilaller",42.47221,0.71262,"h"],["LEVR","Vilaller Heliport","",42.3047,0.71306,"h"],["","Vilamaior Forest Fire Base Heliport","Verin",41.97397,-7.39922,"h"],["LEVO","Villahermosa Heliport","Villahermosa",38.75094,-2.84208,"h"],["","Villarrobledo Health Center Helipad","Villarrobledo",39.26483,-2.5935,"h"],["LEXU","Xurés Forest Fire Base Heliport","Ourense",41.95115,-7.95731,"h"],["","Xàbia Heliport","Xàbia",38.77313,0.17734,"h"]];
+</script>
+<script>
+(function(){
+"use strict";
+
+var KEY="aerodromos.v3",KEY_ROUTES="aerodromos.routes.v1",KEY_GEO="aerodromos.geo.v1",COLORS=7;
+var OSRM="https://router.project-osrm.org",NOM="https://nominatim.openstreetmap.org";
+
+/* ---------- Utilidades ---------- */
+function lsGet(k){try{var r=localStorage.getItem(k);return r?JSON.parse(r):null;}catch(e){return null;}}
+function lsSet(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}}
+function esc(s){return String(s==null?"":s).replace(/[&<>"']/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c];});}
+function norm(s){return String(s||"").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g,"").replace(/[^a-z0-9 ]+/g," ").replace(/\s+/g," ").trim();}
+function toMin(t){var p=String(t||"0:0").split(":");return (+p[0]||0)*60+(+p[1]||0);}
+function fmt(m){m=Math.round(m);var h=Math.floor(m/60)%24,mm=((m%60)+60)%60;return (h<10?"0":"")+h+":"+(mm<10?"0":"")+mm;}
+function dur(m){m=Math.round(m);var h=Math.floor(m/60),mm=m%60;return h?h+" h "+(mm<10?"0":"")+mm+" min":mm+" min";}
+function km1(k){return (Math.round(k*10)/10).toLocaleString("es-ES",{minimumFractionDigits:0,maximumFractionDigits:1})+" km";}
+function newId(){return "p"+Math.random().toString(36).slice(2,8);}
+function toast(t){var el=document.createElement("div");el.className="toast";el.textContent=t;document.body.appendChild(el);setTimeout(function(){el.remove();},2800);}
+function hav(a,b){var R=6371,r=Math.PI/180,dl=(b.lat-a.lat)*r,dn=(b.lon-a.lon)*r;
+  var x=Math.sin(dl/2)*Math.sin(dl/2)+Math.cos(a.lat*r)*Math.cos(b.lat*r)*Math.sin(dn/2)*Math.sin(dn/2);return 2*R*Math.asin(Math.sqrt(x));}
+function timedFetch(url,ms){
+  var ctl=typeof AbortController!=="undefined"?new AbortController():null,to=setTimeout(function(){if(ctl)ctl.abort();},ms||8000);
+  return fetch(url,ctl?{signal:ctl.signal}:{}).then(function(r){clearTimeout(to);if(!r.ok)throw new Error("http "+r.status);return r.json();},function(e){clearTimeout(to);throw e;});
+}
+
+/* ---------- Estado ---------- */
+function exampleState(){
+  var s={
+    hotel:{name:"Hotel en Valencia (cambia aquí tu hotel)",lat:39.4699,lon:-0.3763,approx:true,note:"Marcador provisional en el centro de Valencia."},
+    nDays:3,firstDate:"",example:true,
+    cfg:{lunchStart:"14:00",lunchMin:60,speed:82,over:5,factor:1.45,balance:false,defStart:"08:00",defEnd:"18:00",defMax:8,defVisit:120},
+    days:[],ov:{},
+    places:[
+      mk("Olocau Airfield","","Olocau",39.675517,-0.548855,false,""),
+      mk("Aeródromo Requena El Rebollar","LERE","Requena",39.474700,-1.034440,false,""),
+      mk("La Llosa Airfield","","La Llosa",39.749790,-0.181346,false,""),
+      mk("Chulilla","","Chulilla",39.656377,-0.892103,true,"Posición del centro del municipio, no del aeródromo. Pulsa «Posición» para pegar las coordenadas exactas.")
+    ],plan:{days:[],un:[]}
+  };
+  for(var i=0;i<3;i++)s.days.push({start:"08:00",end:"18:00",max:8});
+  return s;
+}
+function mk(name,code,muni,lat,lon,approx,note){return {id:newId(),name:name,code:code||"",muni:muni||"",lat:lat,lon:lon,approx:!!approx,note:note||"",visit:120,on:true,pin:null};}
+var state=(function(){var s=lsGet(KEY);return(s&&s.places&&s.days&&s.plan&&s.hotel&&s.cfg)?s:null;})()||exampleState();
+if(!state.ov)state.ov={};
+var routeCache=lsGet(KEY_ROUTES)||{},geoCache=lsGet(KEY_GEO)||{},geoFail={},memo=new Map();
+var routeMode="idle",addMsg="",addInfo="",hotelMsg="",removing=null,editingLeg=null,editingPos=null,drag=null;
+function save(){lsSet(KEY,state);}
+
+function byId(id){for(var i=0;i<state.places.length;i++)if(state.places[i].id===id)return state.places[i];return null;}
+function node(id){return id==="H"?state.hotel:byId(id);}
+function ck(n){return n.lat.toFixed(4)+","+n.lon.toFixed(4);}
+function okey(a,b){return a<b?a+"|"+b:b+"|"+a;}
+
+/* ---------- Distancias y tiempos ---------- */
+function timeFromKm(k){return Math.max(1,Math.ceil((+state.cfg.over||0)+k/(+state.cfg.speed||82)*60));}
+function leg(a,b){
+  if(a===b)return {min:0,km:0,src:"osrm"};
+  var o=state.ov[okey(a,b)];if(o)return {min:o.min,km:o.km,src:"ov"};
+  var A=node(a),B=node(b),r=routeCache[ck(A)+">"+ck(B)]||routeCache[ck(B)+">"+ck(A)];
+  if(r)return {min:timeFromKm(r),km:r,src:"osrm"};
+  var k=Math.round(hav(A,B)*(+state.cfg.factor||1.45)*10)/10;
+  return {min:timeFromKm(k),km:k,src:"est"};
+}
+function coverage(){
+  var ids=["H"].concat(state.places.filter(function(p){return p.on;}).map(function(p){return p.id;})),tot=0,real=0;
+  for(var i=0;i<ids.length;i++)for(var j=i+1;j<ids.length;j++){tot++;var s=leg(ids[i],ids[j]).src;if(s!=="est")real++;}
+  return {tot:tot,real:real};
+}
+function nodeList(){return [state.hotel].concat(state.places);}
+function loadRoutes(){
+  var ns=nodeList(),need=false;
+  for(var i=0;i<ns.length&&!need;i++)for(var j=i+1;j<ns.length;j++){if(routeCache[ck(ns[i])+">"+ck(ns[j])]==null&&routeCache[ck(ns[j])+">"+ck(ns[i])]==null){need=true;break;}}
+  if(!need||ns.length<2){routeMode="ok";return Promise.resolve(false);}
+  routeMode="loading";render();
+  var coords=ns.map(function(n){return n.lon.toFixed(5)+","+n.lat.toFixed(5);}).join(";");
+  return timedFetch(OSRM+"/table/v1/driving/"+coords+"?annotations=distance",12000).then(function(j){
+    if(!j||!j.distances)throw new Error("fmt");
+    for(var a=0;a<ns.length;a++)for(var b=0;b<ns.length;b++){if(a===b)continue;var d=j.distances[a][b];if(d!=null)routeCache[ck(ns[a])+">"+ck(ns[b])]=Math.round(d/100)/10;}
+    lsSet(KEY_ROUTES,routeCache);routeMode="ok";return true;
+  }).catch(function(){routeMode="fail";return false;});
+}
+function refreshRoutes(reopt){
+  return loadRoutes().then(function(changed){memo=new Map();if(changed&&reopt)optimizeAll();save();render();});
+}
+
+/* ---------- Simulación de un día ---------- */
+function evalDay(d,ids){
+  var key=d+":"+ids.join(",");if(memo.has(key))return memo.get(key);
+  var day=state.days[d],c=state.cfg,live=ids.filter(function(id){var p=byId(id);return p&&p.on;});
+  var t=toMin(day.start),prev="H",drive=0,km=0,visit=0,lunch=null,seq=[],ls=toMin(c.lunchStart),lm=+c.lunchMin||0;
+  function lunchCheck(){if(!lunch&&lm>0&&t>=ls){lunch={t0:t,t1:t+lm};seq.push({type:"lunch",t0:t,t1:t+lm});t+=lm;}}
+  live.forEach(function(id){
+    var L=leg(prev,id);seq.push({type:"leg",from:prev,to:id,min:L.min,km:L.km,src:L.src});
+    t+=L.min;drive+=L.min;km+=L.km;lunchCheck();
+    var p=byId(id);
+    if(!lunch&&lm>0&&t<ls&&ls-t<=45&&t+(+p.visit||0)>ls+30){lunch={t0:t,t1:t+lm};seq.push({type:"lunch",t0:t,t1:t+lm});t+=lm;}
+    var arr=t;t+=(+p.visit||0);visit+=(+p.visit||0);
+    seq.push({type:"stop",id:id,arr:arr,dep:t});lunchCheck();prev=id;});
+  if(live.length){var L2=leg(prev,"H");seq.push({type:"leg",from:prev,to:"H",min:L2.min,km:L2.km,src:L2.src});t+=L2.min;drive+=L2.min;km+=L2.km;seq.push({type:"return",t:t});}
+  var work=drive+visit,o1=Math.max(0,work-(+day.max||0)*60),o2=live.length?Math.max(0,t-toMin(day.end)):0;
+  var r={seq:seq,drive:drive,km:Math.round(km*10)/10,visit:visit,work:work,end:t,n:live.length,over:o1+o2,overWork:o1,overEnd:o2,feasible:(o1+o2)===0,lunch:lunch};
+  memo.set(key,r);return r;
+}
+function dayCost(e){return e.feasible?e.drive+e.km*0.05:100000+e.over*100+e.drive;}
+
+/* ---------- Optimización ---------- */
+function rng(seed){return function(){seed|=0;seed=seed+0x6D2B79F5|0;var t=Math.imul(seed^seed>>>15,1|seed);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296;};}
+function cleanPins(){state.places.forEach(function(p){if(p.pin!=null&&p.pin!==-1&&p.pin>=state.nDays)p.pin=null;});}
+function normalizePlan(){
+  while(state.plan.days.length<state.nDays)state.plan.days.push([]);
+  while(state.plan.days.length>state.nDays)state.plan.un=state.plan.un.concat(state.plan.days.pop());
+  var seen={};
+  state.plan.days=state.plan.days.map(function(a){return a.filter(function(i){if(seen[i]||!byId(i))return false;seen[i]=1;return true;});});
+  state.plan.un=state.plan.un.filter(function(i){if(seen[i]||!byId(i))return false;seen[i]=1;return true;});
+  state.places.forEach(function(p){if(!seen[p.id])state.plan.un.push(p.id);});
+  while(state.days.length<state.nDays)state.days.push({start:state.cfg.defStart,end:state.cfg.defEnd,max:+state.cfg.defMax});
+  state.days.length=state.nDays;
+}
+function optimizeAll(){
+  memo=new Map();cleanPins();normalizePlan();
+  var D=state.nDays,pc=function(id){var p=byId(id);return p.pin==null?null:p.pin;};
+  var onIds=state.places.filter(function(p){return p.on;}).map(function(p){return p.id;});
+  var offLoc={};state.plan.days.forEach(function(a,d){a.forEach(function(i){if(!byId(i).on)offLoc[i]=d;});});
+  state.plan.un.forEach(function(i){if(!byId(i).on)offLoc[i]=-1;});
+  var penUn=3000;
+  function total(pl){var c=0,ws=[];for(var d=0;d<D;d++){var e=evalDay(d,pl.days[d]);c+=dayCost(e);ws.push(e.work);}
+    pl.un.forEach(function(id){if(pc(id)!==-1)c+=penUn;});
+    if(state.cfg.balance)ws.forEach(function(w){c+=(w/60)*(w/60)*4;});return c;}
+  function can(id,t){var p=pc(id);return p==null||p===t;}
+  function clone(pl){return {days:pl.days.map(function(a){return a.slice();}),un:pl.un.slice()};}
+  function list(pl,t){return t===-1?pl.un:pl.days[t];}
+  function climb(pl){
+    var best=total(pl),improved=true,guard=0;
+    while(improved&&guard++<200){
+      improved=false;var locs=[];for(var d=-1;d<D;d++){var L=list(pl,d);for(var i=0;i<L.length;i++)locs.push([d,i]);}
+      outer:for(var k=0;k<locs.length;k++){
+        var sd=locs[k][0],si=locs[k][1],id=list(pl,sd)[si];
+        for(var td=-1;td<D;td++){if(!can(id,td))continue;
+          var base=clone(pl);list(base,sd).splice(si,1);var tl=list(base,td);
+          for(var pos=0;pos<=tl.length;pos++){if(td===sd&&pos===si)continue;
+            var cand=clone(base);list(cand,td).splice(pos,0,id);var c=total(cand);
+            if(c<best-1e-6){pl=cand;best=c;improved=true;break outer;}}}}
+      if(improved)continue;
+      outer2:for(var a=0;a<locs.length;a++)for(var b=a+1;b<locs.length;b++){
+        var da=locs[a][0],ia=locs[a][1],db=locs[b][0],ib=locs[b][1],x=list(pl,da)[ia],y=list(pl,db)[ib];
+        if(!can(x,db)||!can(y,da))continue;
+        var c2p=clone(pl);list(c2p,da)[ia]=y;list(c2p,db)[ib]=x;var c2=total(c2p);
+        if(c2<best-1e-6){pl=c2p;best=c2;improved=true;break outer2;}}
+    }
+    return {pl:pl,cost:best};
+  }
+  var R=rng(12345),bestRes=null,starts=[],cur={days:[],un:[]};
+  for(var d0=0;d0<D;d0++)cur.days.push(state.plan.days[d0].filter(function(i){return byId(i).on;}));
+  cur.un=state.plan.un.filter(function(i){return byId(i).on;});starts.push(cur);
+  var nStarts=onIds.length>14?8:onIds.length>10?16:36;
+  for(var s=0;s<nStarts;s++){
+    var pl={days:[],un:[]};for(var dd=0;dd<D;dd++)pl.days.push([]);
+    onIds.slice().sort(function(){return R()-0.5;}).forEach(function(id){var p=pc(id);if(p===-1)pl.un.push(id);else if(p!=null)pl.days[p].push(id);else pl.days[Math.floor(R()*D)].push(id);});
+    starts.push(pl);
+  }
+  starts.forEach(function(st){var res=climb({days:st.days.map(function(a){return a.slice();}),un:st.un.slice()});if(!bestRes||res.cost<bestRes.cost-1e-6)bestRes=res;});
+  var out=bestRes.pl;
+  Object.keys(offLoc).forEach(function(id){var loc=offLoc[id];if(loc>=0&&loc<D)out.days[loc].push(id);else out.un.push(id);});
+  state.plan=out;memo=new Map();
+}
+function reorderDay(d){
+  memo=new Map();
+  var ids=state.plan.days[d],live=ids.filter(function(i){return byId(i).on;}),off=ids.filter(function(i){return !byId(i).on;});
+  if(live.length<2)return;
+  var best=null,bc=Infinity;
+  if(live.length<=8){(function perm(a,rest){if(!rest.length){var c=dayCost(evalDay(d,a));if(c<bc-1e-9){bc=c;best=a.slice();}return;}
+    for(var i=0;i<rest.length;i++){var r=rest.slice(),x=r.splice(i,1)[0];perm(a.concat([x]),r);}})([],live);}
+  else{var cur=live.slice(),imp=true;bc=dayCost(evalDay(d,cur));best=cur;
+    while(imp){imp=false;for(var i=0;i<cur.length-1;i++)for(var j=i+1;j<cur.length;j++){
+      var c2=cur.slice(0,i).concat(cur.slice(i,j+1).reverse(),cur.slice(j+1)),cc=dayCost(evalDay(d,c2));
+      if(cc<bc-1e-9){bc=cc;cur=c2;best=c2;imp=true;}}}}
+  state.plan.days[d]=best.concat(off);memo=new Map();
+}
+
+/* ---------- Búsqueda de aeródromos ---------- */
+var DB=(typeof AIRFIELDS!=="undefined"?AIRFIELDS:[]).map(function(a){return {code:a[0],name:a[1],muni:a[2],lat:a[3],lon:a[4],heli:a[5]==="h",n:norm(a[0]+" "+a[1]+" "+a[2])};});
+function searchDB(q){
+  var nq=norm(q);if(nq.length<2)return [];var toks=nq.split(" "),out=[];
+  DB.forEach(function(a){
+    var ok=toks.every(function(t){return a.n.indexOf(t)>-1;});if(!ok)return;
+    var sc=0;if(a.code&&norm(a.code)===nq)sc+=100;if(norm(a.name).indexOf(nq)===0)sc+=30;if(norm(a.muni)===nq)sc+=25;if(norm(a.name).indexOf(nq)>-1)sc+=15;if(a.heli)sc-=20;if(a.code)sc+=3;
+    out.push({a:a,sc:sc});});
+  out.sort(function(x,y){return y.sc-x.sc;});
+  return out.slice(0,6).map(function(o){return {name:o.a.name,code:o.a.code,muni:o.a.muni,lat:o.a.lat,lon:o.a.lon,approx:false,src:o.a.heli?"Helipuerto":"Aeródromo",from:"db"};});
+}
+function parseCoords(s){
+  var m=s.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/)||s.match(/!3d(-?\d+\.\d+)!4d(-?\d+\.\d+)/)||s.match(/(-?\d{1,2}[.,]\d{2,})\s*[,;\s]\s*(-?\d{1,3}[.,]\d{2,})/);
+  if(!m)return null;var la=parseFloat(m[1].replace(",",".")),lo=parseFloat(m[2].replace(",","."));
+  if(isNaN(la)||isNaN(lo)||Math.abs(la)>90||Math.abs(lo)>180)return null;return {lat:la,lon:lo};}
+function nominatim(q){
+  return timedFetch(NOM+"/search?format=json&limit=6&countrycodes=es&accept-language=es&q="+encodeURIComponent(q),9000).then(function(j){
+    return j.map(function(r){var disp=r.display_name.split(",");return {id:r.place_id,name:r.name||disp[0],muni:disp.slice(1,3).join(",").trim(),lat:+r.lat,lon:+r.lon,cls:r["class"],type:r.type,display:r.display_name};});});
+}
+function osmPlaces(q){
+  return Promise.all([nominatim("aeródromo "+q).catch(function(){return null;}),nominatim(q).catch(function(){return null;})]).then(function(rs){
+    if(rs[0]===null&&rs[1]===null)throw new Error("offline");
+    var seen={},out=[];
+    (rs[0]||[]).concat(rs[1]||[]).forEach(function(r){if(seen[r.id])return;seen[r.id]=1;
+      var air=r.cls==="aeroway";
+      out.push({name:r.name,code:"",muni:r.muni,lat:r.lat,lon:r.lon,approx:!air,src:air?"Mapa · aeródromo":"Mapa · lugar (posición aproximada)",from:"osm",air:air});});
+    out.sort(function(a,b){return (b.air?1:0)-(a.air?1:0);});
+    return out.slice(0,6);
+  });
+}
+function suggHTML(items,loading,msg){
+  var h="";
+  if(items.length){h+='<div class="hd">Resultados</div>';items.forEach(function(it,i){
+    h+='<button type="button" data-act="pick" data-i="'+i+'"><div class="t">'+(it.code?'<span class="icao">'+esc(it.code)+'</span>':"")+esc(it.name)+'</div><div class="s">'+esc(it.src)+(it.muni?" · "+esc(it.muni):"")+'</div></button>';});}
+  if(loading)h+='<div class="none">Buscando en el mapa…</div>';
+  if(msg)h+='<div class="none">'+esc(msg)+'</div>';
+  return h;
+}
+var suggItems=[],suggTimer=null,suggSeq=0;
+function updateSuggestions(q){
+  var box=document.getElementById("sugg");if(!box)return;
+  clearTimeout(suggTimer);var seq=++suggSeq;
+  if(norm(q).length<2){box.hidden=true;box.innerHTML="";suggItems=[];return;}
+  var local=searchDB(q),c=parseCoords(q);suggItems=local.slice();
+  if(c)suggItems.unshift({name:"Punto "+c.lat.toFixed(5)+", "+c.lon.toFixed(5),code:"",muni:"",lat:c.lat,lon:c.lon,approx:false,src:"Coordenadas",from:"coords"});
+  box.hidden=false;box.innerHTML=suggHTML(suggItems,!c,"");
+  if(c)return;
+  suggTimer=setTimeout(function(){
+    osmPlaces(q).then(function(osm){if(seq!==suggSeq)return;
+      suggItems=local.concat(osm);box.innerHTML=suggHTML(suggItems,false,suggItems.length?"":"Sin resultados. Prueba con el municipio o pega coordenadas / un enlace de Google Maps.");
+    }).catch(function(){if(seq!==suggSeq)return;box.innerHTML=suggHTML(suggItems,false,suggItems.length?"Sin conexión al buscador de mapas: solo se muestra la base de aeródromos.":"Sin conexión al buscador de mapas. Pega coordenadas o un enlace de Google Maps.");});
+  },550);
+}
+function addPlace(it){
+  var p=mk(it.name,it.code,it.muni,it.lat,it.lon,it.approx,it.approx?"Posición aproximada (municipio o lugar), no del aeródromo. Pulsa «Posición» para pegar las coordenadas exactas.":"");
+  p.visit=Math.max(15,+document.getElementById("addmin").value||+state.cfg.defVisit||120);
+  state.places.push(p);state.example=false;addMsg="";addInfo="";
+  optimizeAll();save();render();refreshRoutes(true);
+}
+
+/* ---------- Hotel ---------- */
+var hotelItems=[];
+function searchHotel(q){
+  var box=document.getElementById("hsugg");if(!box)return;
+  var c=parseCoords(q);
+  if(c){setHotel({name:"Hotel",lat:c.lat,lon:c.lon,approx:false});return;}
+  if(norm(q).length<3){return;}
+  box.hidden=false;box.innerHTML='<div class="none">Buscando…</div>';
+  nominatim(q).then(function(rs){
+    hotelItems=rs.map(function(r){return {name:q.length>3?q:r.name,lat:r.lat,lon:r.lon,approx:false,src:r.display};});
+    box.innerHTML=hotelItems.length?hotelItems.map(function(it,i){return '<button type="button" data-act="pickhotel" data-i="'+i+'"><div class="t">'+esc(it.name)+'</div><div class="s">'+esc(it.src)+'</div></button>';}).join(""):'<div class="none">Sin resultados. Prueba con la calle y la ciudad, o pega coordenadas.</div>';
+  }).catch(function(){box.innerHTML='<div class="none">Sin conexión al buscador de mapas. Pega coordenadas o un enlace de Google Maps.</div>';});
+}
+function setHotel(h){state.hotel=h;state.example=false;routeMode="idle";optimizeAll();save();render();refreshRoutes(true);}
+
+/* ---------- Enlaces de navegación ---------- */
+function q(n){return n.lat.toFixed(6)+","+n.lon.toFixed(6);}
+function linksFor(d){
+  var ids=state.plan.days[d].filter(function(i){return byId(i).on;});if(!ids.length)return null;
+  var H=state.hotel,hq=q(H),stops=ids.map(byId),sq=stops.map(q);
+  return {
+    g:"https://www.google.com/maps/dir/?api=1&travelmode=driving&origin="+encodeURIComponent(hq)+"&destination="+encodeURIComponent(hq)+"&waypoints="+encodeURIComponent(sq.join("|")),
+    a:"https://maps.apple.com/?dirflg=d&saddr="+encodeURIComponent(hq)+"&daddr="+sq.concat([hq]).map(encodeURIComponent).join("+to:"),
+    w:stops.map(function(p){return {p:p,url:"https://waze.com/ul?navigate=yes&ll="+q(p)};})};
+}
+function gLeg(a,b){return "https://www.google.com/maps/dir/?api=1&travelmode=driving&origin="+encodeURIComponent(q(node(a)))+"&destination="+encodeURIComponent(q(node(b)));}
+
+/* ---------- Geometría de rutas y mapa ---------- */
+function decodePoly(str){var i=0,la=0,lo=0,out=[];while(i<str.length){var c,sh=0,r=0;do{c=str.charCodeAt(i++)-63;r|=(c&31)<<sh;sh+=5;}while(c>=32);la+=(r&1)?~(r>>1):(r>>1);sh=0;r=0;do{c=str.charCodeAt(i++)-63;r|=(c&31)<<sh;sh+=5;}while(c>=32);lo+=(r&1)?~(r>>1):(r>>1);out.push([la/1e5,lo/1e5]);}return out;}
+var geoQueue=[],geoBusy=false;
+function gkey(A,B){return ck(A)+">"+ck(B);}
+function geoFor(a,b){
+  var A=node(a),B=node(b),k=gkey(A,B),k2=gkey(B,A);
+  if(geoCache[k])return decodePoly(geoCache[k]);
+  if(geoCache[k2])return decodePoly(geoCache[k2]).reverse();
+  if(!geoFail[k]&&!geoQueue.some(function(x){return x.k===k;}))geoQueue.push({k:k,A:A,B:B});
+  runGeo();return null;
+}
+function runGeo(){
+  if(geoBusy||!geoQueue.length)return;geoBusy=true;var it=geoQueue.shift();
+  timedFetch(OSRM+"/route/v1/driving/"+it.A.lon.toFixed(5)+","+it.A.lat.toFixed(5)+";"+it.B.lon.toFixed(5)+","+it.B.lat.toFixed(5)+"?overview=simplified&geometries=polyline",9000).then(function(j){
+    if(j&&j.routes&&j.routes[0]){geoCache[it.k]=j.routes[0].geometry;lsSet(KEY_GEO,geoCache);drawMap();}else geoFail[it.k]=1;
+  }).catch(function(){geoFail[it.k]=1;}).then(function(){geoBusy=false;setTimeout(runGeo,350);});
+}
+var map=null,mapEl=null,layer=null,modal=null;
+function colorOf(d){return (getComputedStyle(document.documentElement).getPropertyValue("--d"+(d%COLORS))||"#0A5FB4").trim();}
+function ensureMap(){
+  if(map||typeof L==="undefined")return;
+  mapEl=document.createElement("div");mapEl.className="leafmap";
+  map=L.map(mapEl,{zoomControl:false,dragging:false,touchZoom:false,scrollWheelZoom:false,doubleClickZoom:false,boxZoom:false,keyboard:false,attributionControl:true});
+  L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png",{maxZoom:18,attribution:"© OpenStreetMap"}).addTo(map);
+  layer=L.layerGroup().addTo(map);
+}
+function interactive(on){if(!map)return;["dragging","touchZoom","scrollWheelZoom","doubleClickZoom","boxZoom","keyboard"].forEach(function(h){if(map[h])map[on?"enable":"disable"]?map[h][on?"enable":"disable"]():0;});
+  if(on&&!map._zc){map._zc=L.control.zoom({position:"topleft"}).addTo(map);}if(!on&&map._zc){map.removeControl(map._zc);map._zc=null;}}
+function drawMap(){
+  if(!map)return;layer.clearLayers();
+  var all=[],inDay={};
+  state.plan.days.forEach(function(ids,d){
+    var live=ids.filter(function(i){return byId(i).on;});if(!live.length)return;
+    var seq=["H"].concat(live,["H"]);
+    for(var i=0;i<seq.length-1;i++){
+      var g=geoFor(seq[i],seq[i+1]),A=node(seq[i]),B=node(seq[i+1]),back=i===seq.length-2;
+      var pts=g||[[A.lat,A.lon],[B.lat,B.lon]];pts.forEach(function(p){all.push(p);});
+      L.polyline(pts,{color:colorOf(d),weight:4,opacity:g?.9:.55,dashArray:back?"9 7":(g?null:"3 7")}).addTo(layer);}
+    live.forEach(function(id,k){inDay[id]={d:d,k:k+1};});
+  });
+  state.places.forEach(function(p){if(!p.on)return;all.push([p.lat,p.lon]);var m=inDay[p.id];
+    L.marker([p.lat,p.lon],{icon:L.divIcon({className:"",iconSize:[24,24],iconAnchor:[12,12],html:m?'<div class="mk" style="background:'+colorOf(m.d)+'">'+m.k+'</div>':'<div class="mk off">·</div>'}),title:p.name}).addTo(layer);});
+  all.push([state.hotel.lat,state.hotel.lon]);
+  L.marker([state.hotel.lat,state.hotel.lon],{icon:L.divIcon({className:"",iconSize:[24,24],iconAnchor:[12,12],html:'<div class="mk h">H</div>'}),title:"Hotel"}).addTo(layer);
+  try{map.fitBounds(L.latLngBounds(all),{padding:[28,28],maxZoom:14});}catch(e){}
+}
+function mountMap(){
+  var slot=document.getElementById("mapslot");if(!slot)return;
+  if(typeof L==="undefined"){slot.innerHTML='<div class="mapnote">El mapa necesita conexión a internet.</div>';return;}
+  ensureMap();
+  if(!modal){slot.innerHTML="";slot.appendChild(mapEl);var z=document.createElement("button");z.className="mapzoom";z.setAttribute("data-act","zoom");z.setAttribute("aria-label","Ampliar mapa");z.innerHTML="<span>Ampliar</span>";slot.appendChild(z);}
+  setTimeout(function(){map.invalidateSize();drawMap();},0);
+}
+function openModal(){
+  if(!map||modal)return;
+  modal=document.createElement("div");modal.className="modal";
+  modal.innerHTML='<div class="inner"><div style="display:flex;justify-content:space-between;align-items:center"><h2>Mapa</h2><button class="btn small" id="closemap">Cerrar</button></div><div id="bigslot"></div></div>';
+  document.body.appendChild(modal);
+  document.getElementById("bigslot").appendChild(mapEl);mapEl.classList.add("big");interactive(true);
+  setTimeout(function(){map.invalidateSize();drawMap();},0);
+  modal.addEventListener("click",function(ev){if(ev.target===modal||ev.target.id==="closemap")closeModal();});
+}
+function closeModal(){
+  if(!modal)return;var m=modal;modal=null;mapEl.classList.remove("big");interactive(false);m.remove();mountMap();
+}
+
+/* ---------- Render ---------- */
+var app=document.getElementById("app");
+var GRIP='<svg viewBox="0 0 14 14" aria-hidden="true"><circle cx="4" cy="2.5" r="1.4"/><circle cx="10" cy="2.5" r="1.4"/><circle cx="4" cy="7" r="1.4"/><circle cx="10" cy="7" r="1.4"/><circle cx="4" cy="11.5" r="1.4"/><circle cx="10" cy="11.5" r="1.4"/></svg>';
+function dayDate(d){if(!state.firstDate)return "";var dt=new Date(state.firstDate+"T00:00:00");if(isNaN(dt))return "";dt.setDate(dt.getDate()+d);return dt.toLocaleDateString("es-ES",{weekday:"short",day:"numeric",month:"short"});}
+function legHTML(s){
+  var key=okey(s.from,s.to),ed=editingLeg===key,mark=s.src==="est"?'<span class="est" title="Estimación: sin ruta real para este tramo">≈</span> ':(s.src==="ov"?'<span title="Corregido a mano">✎</span> ':"");
+  var h='<div class="leg">'+mark;
+  if(ed){h+='<input type="number" min="1" id="lgm" value="'+s.min+'" aria-label="Minutos del tramo"> min <input type="number" min="0" step="0.1" id="lgk" value="'+s.km+'" aria-label="Km del tramo"> km <button class="linkbtn" data-act="legsave" data-a="'+s.from+'" data-b="'+s.to+'">Guardar</button> <button class="linkbtn" data-act="legreset" data-a="'+s.from+'" data-b="'+s.to+'">Restaurar</button> <a class="linkbtn" target="_blank" rel="noopener" href="'+esc(gLeg(s.from,s.to))+'">Ver en Google</a>';}
+  else{h+='<span class="mono">'+dur(s.min)+'</span> · <span class="mono">'+km1(s.km)+'</span>'+(s.to==="H"?" · vuelta al hotel":"")+' <button class="linkbtn" data-act="legedit" data-a="'+s.from+'" data-b="'+s.to+'" aria-label="Corregir este tramo">corregir</button>';}
+  return h+'</div>';
+}
+function stopHTML(id,d,info){
+  var p=byId(id),opts='<option value="u"'+(d===-1?" selected":"")+'>Sin asignar</option>';
+  for(var k=0;k<state.nDays;k++)opts+='<option value="'+k+'"'+(k===d?" selected":"")+'>Día '+(k+1)+'</option>';
+  var times=info?fmt(info.arr)+" – "+fmt(info.dep):(p.on?"":"descartado");
+  var pos=editingPos===id?'<input type="text" id="posin" placeholder="37.8368, -1.0977 o enlace de Google Maps" aria-label="Coordenadas"> <button class="linkbtn" data-act="possave" data-id="'+id+'">Guardar</button> <button class="linkbtn" data-act="poscancel">Cancelar</button>':'<button class="linkbtn" data-act="posedit" data-id="'+id+'">Posición</button>';
+  return '<div class="stop'+(p.on?"":" off")+'" data-id="'+id+'">'+
+    '<div class="grip" data-grip="'+id+'" title="Arrastra para mover" aria-label="Arrastrar '+esc(p.name)+'">'+GRIP+'</div>'+
+    '<input type="checkbox" data-act="toggle" data-id="'+id+'"'+(p.on?" checked":"")+' aria-label="Incluir '+esc(p.name)+'">'+
+    '<div class="body"><div class="nm">'+(p.code?'<span class="icao">'+esc(p.code)+'</span>':"")+esc(p.name)+'</div>'+
+    '<div class="times">'+times+(p.muni?' · <span style="font-family:var(--f-body)">'+esc(p.muni)+'</span>':"")+'</div></div>'+
+    '<div class="ctl"><label>Inspección <input type="number" min="15" step="15" value="'+p.visit+'" data-field="visit" data-id="'+id+'" aria-label="Minutos en '+esc(p.name)+'"> min</label>'+
+    '<select data-field="moveto" data-id="'+id+'" aria-label="Mover '+esc(p.name)+' a otro día">'+opts+'</select>'+
+    (p.pin!=null?'<button class="linkbtn pin" data-act="unpin" data-id="'+id+'" title="Quitar fijación">fijado · soltar</button>':"")+pos+
+    (removing===id?'<button class="linkbtn" style="color:var(--bad)" data-act="remove2" data-id="'+id+'">¿Quitar de la lista?</button>':'<button class="linkbtn" data-act="remove" data-id="'+id+'">Quitar</button>')+
+    '</div>'+(p.note&&p.approx?'<div class="note">'+esc(p.note)+'</div>':"")+'</div>';
+}
+function colHTML(d){
+  var ids=state.plan.days[d],e=evalDay(d,ids),day=state.days[d];
+  var badge=!e.n?'<span class="badge idle">Libre</span>':(e.feasible?'<span class="badge ok">Cabe</span>':'<span class="badge bad">No cabe</span>');
+  var why="";if(!e.feasible){var w=[];if(e.overWork)w.push("pasa "+dur(e.overWork)+" del límite de horas");if(e.overEnd)w.push("vuelve "+dur(e.overEnd)+" tarde");why='<div class="why">'+w.join(" y ")+".</div>";}
+  var body="";
+  if(e.n){
+    body+='<div class="mark">Salida hotel <span class="mono">'+day.start+'</span></div>';
+    e.seq.forEach(function(s){
+      if(s.type==="leg")body+=legHTML(s);
+      else if(s.type==="lunch")body+='<div class="mark lunch">Comida <span class="mono">'+fmt(s.t0)+' – '+fmt(s.t1)+'</span></div>';
+      else if(s.type==="stop"){var info=s;body+=stopHTML(s.id,d,info);}
+      else if(s.type==="return")body+='<div class="mark">Regreso al hotel <span class="mono">'+fmt(s.t)+'</span></div>';});
+  }
+  ids.filter(function(i){return !byId(i).on;}).forEach(function(i){body+=stopHTML(i,d,null);});
+  if(!ids.length)body='<div class="empty">Arrastra aquí un aeródromo</div>';
+  else if(!e.n)body='<div class="empty">Sin destinos activos</div>'+body;
+  return '<section class="col" data-col="'+d+'" style="--dc:var(--d'+(d%COLORS)+')">'+
+   '<div class="colhead"><div class="row"><h3>Día '+(d+1)+'</h3><span class="date">'+esc(dayDate(d))+'</span>'+badge+'</div>'+
+   '<div class="stats"><div class="stat"><div class="k">Conducción</div><div class="v">'+dur(e.drive)+'</div></div>'+
+   '<div class="stat"><div class="k">Distancia</div><div class="v">'+km1(e.km)+'</div></div>'+
+   '<div class="stat"><div class="k">Horas de trabajo</div><div class="v">'+(e.work/60).toFixed(1).replace(".",",")+' / '+day.max+' h</div></div>'+
+   '<div class="stat"><div class="k">Regreso</div><div class="v">'+(e.n?fmt(e.end):"—")+'</div></div></div>'+why+
+   '<details class="hours"><summary>Horario y límite del día</summary><div class="hoursgrid">'+
+   '<div class="field"><label for="s'+d+'">Inicio</label><input id="s'+d+'" type="time" value="'+day.start+'" data-field="dstart" data-d="'+d+'"></div>'+
+   '<div class="field"><label for="e'+d+'">Fin</label><input id="e'+d+'" type="time" value="'+day.end+'" data-field="dend" data-d="'+d+'"></div>'+
+   '<div class="field"><label for="m'+d+'">Máx. h</label><input id="m'+d+'" type="number" min="1" max="16" step="0.5" value="'+day.max+'" data-field="dmax" data-d="'+d+'"></div></div>'+
+   '<div style="margin-top:8px"><button class="btn small" data-act="reorder" data-d="'+d+'">Reordenar este día</button></div></details></div>'+
+   '<div class="list">'+body+'</div></section>';
+}
+function unHTML(){
+  var ids=state.plan.un,body=ids.map(function(i){return stopHTML(i,-1,null);}).join("");
+  return '<section class="col un" data-col="u"><div class="colhead"><div class="row"><h3>Sin asignar</h3><span class="badge idle">'+ids.length+'</span></div>'+
+    '<div class="muted" style="font-size:12px">Lo que no cabe en los días o has apartado. No cuenta en la ruta.</div></div><div class="list">'+(body||'<div class="empty">Todo está asignado</div>')+'</div></section>';
+}
+function render(){
+  var open=[];document.querySelectorAll("details[open]").forEach(function(x,i){open.push(i);});
+  var ae=document.activeElement,aid=ae&&ae.id,avl=ae&&ae.value,aval=(aid==="addtxt"||aid==="hotelq")?avl:null;
+  var tot={drive:0,km:0,n:0};
+  for(var d=0;d<state.nDays;d++){var e=evalDay(d,state.plan.days[d]);tot.drive+=e.drive;tot.km+=e.km;tot.n+=e.n;}
+  var total=state.places.filter(function(p){return p.on;}).length,cov=coverage();
+  var status=routeMode==="loading"?'<span class="chip">Consultando rutas…</span>':
+    (cov.real===cov.tot&&cov.tot>0)?'<span class="chip ok"><b>Rutas reales</b> · km por carretera (OpenStreetMap)</span>':
+    '<span class="chip warn"><b>'+(cov.real?"Parte estimada":"Distancias estimadas")+'</b> · '+(routeMode==="fail"?"sin conexión a rutas":"tramos con ≈")+' <button data-act="retry">Consultar rutas reales</button></span>';
+  var h='<header class="top"><div><h1>Ruta de aeródromos</h1><p>Reparte los aeródromos entre los días de tu estancia y ordénalos para conducir lo mínimo, respetando horas, comida y horario.</p></div><div class="chips">'+status+(state.example?'<span class="chip">Ejemplo: Valencia</span>':"")+'</div></header>';
+  h+='<div class="card setup">'+
+   '<div class="field"><label for="hotelq">Hotel</label><div class="inrow"><input id="hotelq" type="text" placeholder="Nombre y ciudad, o coordenadas" value="" autocomplete="off"><button class="btn" data-act="hsearch" type="button">Buscar</button></div>'+
+   '<div class="sugg" id="hsugg" hidden></div><small><b>'+esc(state.hotel.name)+'</b> · <span class="mono">'+state.hotel.lat.toFixed(4)+', '+state.hotel.lon.toFixed(4)+'</span>'+(state.hotel.approx?' · '+esc(state.hotel.note||"posición aproximada"):"")+'</small></div>'+
+   '<div class="field"><span class="lbl">Días de estancia</span><div class="stepper"><button data-act="daysminus" aria-label="Quitar un día">−</button><output>'+state.nDays+'</output><button data-act="daysplus" aria-label="Añadir un día">+</button></div></div>'+
+   '<div class="field"><label for="fd">Primer día (opcional)</label><input id="fd" type="date" value="'+esc(state.firstDate)+'" data-field="firstDate"></div>'+
+   '<details class="adv"><summary>Ajustes de comida y cálculo</summary><div class="advgrid">'+
+   '<div class="field"><label for="ls">Comida desde</label><input id="ls" type="time" value="'+state.cfg.lunchStart+'" data-field="cfg.lunchStart"></div>'+
+   '<div class="field"><label for="lm">Duración comida (min)</label><input id="lm" type="number" min="0" step="15" value="'+state.cfg.lunchMin+'" data-field="cfg.lunchMin"></div>'+
+   '<div class="field"><label for="ov">Margen por tramo (min)</label><input id="ov" type="number" min="0" max="20" value="'+state.cfg.over+'" data-field="cfg.over"></div>'+
+   '<div class="field"><label for="sp">Velocidad media (km/h)</label><input id="sp" type="number" min="30" max="120" value="'+state.cfg.speed+'" data-field="cfg.speed"></div>'+
+   '<div class="field"><label for="fc">Factor recta→carretera</label><input id="fc" type="number" min="1" max="2" step="0.05" value="'+state.cfg.factor+'" data-field="cfg.factor"></div>'+
+   '<div class="field"><label for="dv">Inspección por defecto (min)</label><input id="dv" type="number" min="15" step="15" value="'+state.cfg.defVisit+'" data-field="cfg.defVisit"></div>'+
+   '<div class="field"><label for="ds">Inicio por defecto</label><input id="ds" type="time" value="'+state.cfg.defStart+'" data-field="cfg.defStart"></div>'+
+   '<div class="field"><label for="de">Fin por defecto</label><input id="de" type="time" value="'+state.cfg.defEnd+'" data-field="cfg.defEnd"></div>'+
+   '<div class="field"><label for="dm">Máx. horas por defecto</label><input id="dm" type="number" min="1" max="16" step="0.5" value="'+state.cfg.defMax+'" data-field="cfg.defMax"></div>'+
+   '<div class="field"><span class="lbl">Aplicar a todos los días</span><button class="btn small" data-act="applydef">Aplicar horario</button></div>'+
+   '<label class="check"><input type="checkbox" data-field="cfg.balance"'+(state.cfg.balance?" checked":"")+'> Equilibrar la carga entre días</label>'+
+   '</div></details></div>';
+  h+='<form class="card" id="addform" autocomplete="off"><div class="addbar"><div class="field"><label for="addtxt">Añadir aeródromo</label><input id="addtxt" type="text" placeholder="Nombre, código OACI (LEMP), municipio o coordenadas" autocomplete="off"><div class="sugg" id="sugg" hidden></div></div>'+
+   '<div class="field sm"><label for="addmin">Inspección (min)</label><input id="addmin" type="number" min="15" step="15" value="'+state.cfg.defVisit+'"></div>'+
+   '<button class="btn primary" type="submit">Añadir</button></div>'+(addMsg?'<div class="msg">'+esc(addMsg)+'</div>':"")+'</form>';
+  h+='<div class="summary"><div><div class="k">Aeródromos en ruta</div><div class="v">'+tot.n+' de '+total+'</div></div><div><div class="k">Conducción total</div><div class="v">'+dur(tot.drive)+'</div></div><div><div class="k">Distancia total</div><div class="v">'+km1(tot.km)+'</div></div>'+
+   '<div><div class="k">Sin asignar</div><div class="v">'+state.plan.un.filter(function(i){return byId(i).on;}).length+'</div></div></div>';
+  h+='<div class="toolbar"><button class="btn primary" data-act="optimize">Optimizar todo</button><button class="btn" data-act="reset">Cargar ejemplo</button></div>';
+  h+='<div class="board" id="board">';for(var k=0;k<state.nDays;k++)h+=colHTML(k);h+=unHTML()+'</div>';
+  h+='<div class="below"><section class="card mapcard"><h2>Mapa</h2><div class="mapslot" id="mapslot"></div><div class="legend">';
+  for(var l=0;l<state.nDays;l++)h+='<span><i style="background:var(--d'+(l%COLORS)+')"></i>Día '+(l+1)+'</span>';
+  h+='</div><div class="muted" style="font-size:12px">Toca el mapa para ampliarlo. La línea discontinua es la vuelta al hotel.</div></section>';
+  h+='<section class="card links"><h2>Navegar</h2>';
+  for(var qd=0;qd<state.nDays;qd++){var Lk=linksFor(qd);
+    h+='<div class="linkday" style="--dc:var(--d'+(qd%COLORS)+')"><div class="hd"><i></i>Día '+(qd+1)+' <span class="muted" style="font-weight:400">'+esc(dayDate(qd))+'</span></div>';
+    if(!Lk)h+='<div class="muted">Sin destinos este día.</div>';
+    else{h+='<div class="navs"><a class="nav g" href="'+esc(Lk.g)+'" target="_blank" rel="noopener">Google Maps</a><a class="nav a" href="'+esc(Lk.a)+'" target="_blank" rel="noopener">Mapas de iPhone</a></div>'+
+      '<div class="wazes"><span>Waze, parada a parada:</span>'+Lk.w.map(function(x,i){return '<a class="nav mini" href="'+esc(x.url)+'" target="_blank" rel="noopener">'+(i+1)+'. '+esc(x.p.code||x.p.name)+'</a>';}).join("")+'</div>';}
+    h+='</div>';}
+  h+='<div class="foot">Google Maps y Mapas de iPhone abren la ruta completa del día, saliendo y volviendo al hotel. Waze solo admite un destino por vez, por eso hay un botón por parada.</div></section></div>';
+  if(modal){var keep=mapEl;}
+  app.innerHTML=h;
+  var ds=app.querySelectorAll("details");open.forEach(function(i){if(ds[i])ds[i].open=true;});
+  if(aid){var el=document.getElementById(aid);if(el){if(aval!=null)el.value=aval;try{el.focus();}catch(x){}}}
+  mountMap();
+}
+
+/* ---------- Acciones ---------- */
+function removeFromPlan(id){state.plan.days=state.plan.days.map(function(a){return a.filter(function(i){return i!==id;});});state.plan.un=state.plan.un.filter(function(i){return i!==id;});}
+function moveTo(id,target,index){
+  removeFromPlan(id);var p=byId(id);
+  if(target==="u"){state.plan.un.push(id);p.pin=-1;}
+  else{var t=+target,Ls=state.plan.days[t];if(index==null||index>Ls.length)index=Ls.length;Ls.splice(index,0,id);p.pin=t;}
+}
+function posOf(id){var r=-1;state.plan.days.forEach(function(a,d){if(a.indexOf(id)>-1)r=d;});return r;}
+app.addEventListener("click",function(e){
+  var b=e.target.closest("[data-act]");if(!b)return;var a=b.dataset.act,id=b.dataset.id;
+  if(a==="optimize"){optimizeAll();save();render();toast("Ruta optimizada");}
+  else if(a==="reset"){var keepRoutes=true;state=exampleState();optimizeAll();save();render();refreshRoutes(true);}
+  else if(a==="retry"){routeMode="idle";refreshRoutes(true);}
+  else if(a==="daysplus"){if(state.nDays<7){state.nDays++;normalizePlan();optimizeAll();save();render();}}
+  else if(a==="daysminus"){if(state.nDays>1){state.nDays--;normalizePlan();optimizeAll();save();render();}}
+  else if(a==="applydef"){state.days=state.days.map(function(){return {start:state.cfg.defStart,end:state.cfg.defEnd,max:+state.cfg.defMax};});optimizeAll();save();render();}
+  else if(a==="reorder"){reorderDay(+b.dataset.d);save();render();}
+  else if(a==="unpin"){byId(id).pin=null;save();render();}
+  else if(a==="remove"){removing=id;render();setTimeout(function(){if(removing===id){removing=null;render();}},3500);}
+  else if(a==="remove2"){removeFromPlan(id);state.places=state.places.filter(function(p){return p.id!==id;});removing=null;optimizeAll();save();render();}
+  else if(a==="zoom"){openModal();}
+  else if(a==="pick"){var it=suggItems[+b.dataset.i];if(it)addPlace(it);}
+  else if(a==="hsearch"){searchHotel(document.getElementById("hotelq").value);}
+  else if(a==="pickhotel"){var h=hotelItems[+b.dataset.i];if(h)setHotel({name:h.name,lat:h.lat,lon:h.lon,approx:false});}
+  else if(a==="legedit"){editingLeg=okey(b.dataset.a,b.dataset.b);render();}
+  else if(a==="legsave"){var mn=Math.max(1,Math.round(+document.getElementById("lgm").value||1)),kk=Math.max(0,+document.getElementById("lgk").value||0);
+    state.ov[okey(b.dataset.a,b.dataset.b)]={min:mn,km:Math.round(kk*10)/10};editingLeg=null;memo=new Map();optimizeAll();save();render();}
+  else if(a==="legreset"){delete state.ov[okey(b.dataset.a,b.dataset.b)];editingLeg=null;memo=new Map();optimizeAll();save();render();}
+  else if(a==="posedit"){editingPos=id;render();var pi=document.getElementById("posin");if(pi)pi.focus();}
+  else if(a==="poscancel"){editingPos=null;render();}
+  else if(a==="possave"){var c=parseCoords(document.getElementById("posin").value);
+    if(!c){toast("No entiendo las coordenadas. Ejemplo: 37.8368, -1.0977");return;}
+    var p2=byId(id);p2.lat=c.lat;p2.lon=c.lon;p2.approx=false;p2.note="";editingPos=null;state.ov={};
+    Object.keys(state.ov).forEach(function(k){if(k.indexOf(id)>-1)delete state.ov[k];});
+    optimizeAll();save();render();refreshRoutes(true);}
+});
+app.addEventListener("change",function(e){
+  var t=e.target,f=t.dataset.field;if(!f&&t.dataset.act!=="toggle")return;
+  if(t.dataset.act==="toggle"){var p=byId(t.dataset.id);p.on=t.checked;memo=new Map();var loc=posOf(p.id);if(loc>=0&&p.on)reorderDay(loc);save();render();return;}
+  if(f==="visit"){var pp=byId(t.dataset.id);pp.visit=Math.max(5,+t.value||120);var lc=posOf(pp.id);memo=new Map();if(lc>=0)reorderDay(lc);save();render();}
+  else if(f==="moveto"){var id=t.dataset.id,from=posOf(id);moveTo(id,t.value);memo=new Map();if(t.value!=="u")reorderDay(+t.value);if(from>=0)reorderDay(from);save();render();}
+  else if(f==="dstart"||f==="dend"||f==="dmax"){var dd=+t.dataset.d;if(f==="dstart")state.days[dd].start=t.value||"08:00";else if(f==="dend")state.days[dd].end=t.value||"18:00";else state.days[dd].max=Math.max(1,+t.value||8);memo=new Map();save();render();}
+  else if(f==="firstDate"){state.firstDate=t.value;save();render();}
+  else if(f.indexOf("cfg.")===0){var k=f.slice(4);state.cfg[k]=t.type==="checkbox"?t.checked:(t.type==="number"?+t.value:t.value);memo=new Map();optimizeAll();save();render();}
+});
+app.addEventListener("input",function(e){
+  if(e.target.id==="addtxt")updateSuggestions(e.target.value);
+});
+app.addEventListener("keydown",function(e){
+  if(e.target.id==="hotelq"&&e.key==="Enter"){e.preventDefault();searchHotel(e.target.value);}
+  if(e.target.id==="posin"&&e.key==="Enter"){e.preventDefault();var b=app.querySelector('[data-act="possave"]');if(b)b.click();}
+  if(e.key==="Escape"){var s=document.getElementById("sugg");if(s)s.hidden=true;var hs=document.getElementById("hsugg");if(hs)hs.hidden=true;}
+});
+app.addEventListener("submit",function(e){
+  if(e.target.id!=="addform")return;e.preventDefault();
+  var txt=document.getElementById("addtxt").value.trim();if(!txt)return;
+  if(suggItems.length){addPlace(suggItems[0]);return;}
+  var c=parseCoords(txt);if(c){addPlace({name:"Punto "+c.lat.toFixed(4)+", "+c.lon.toFixed(4),code:"",muni:"",lat:c.lat,lon:c.lon,approx:false});return;}
+  addMsg="Espera a que aparezcan resultados bajo el cuadro, o pega coordenadas.";render();
+});
+document.addEventListener("click",function(e){
+  if(!e.target.closest(".field")){["sugg","hsugg"].forEach(function(i){var s=document.getElementById(i);if(s&&!e.target.closest("#"+i))s.hidden=true;});}
+});
+document.addEventListener("click",function(e){var b=e.target.closest("button[data-act='zoom']");if(b&&b.closest("#app")===null&&false){}});
+
+/* ---------- Arrastrar y soltar (ratón y táctil) ---------- */
+app.addEventListener("pointerdown",function(e){
+  var g=e.target.closest(".grip");if(!g||(e.button!=null&&e.button>0))return;
+  e.preventDefault();var card=g.closest(".stop"),r=card.getBoundingClientRect(),ghost=card.cloneNode(true);
+  ghost.classList.add("ghost");ghost.style.width=r.width+"px";document.body.appendChild(ghost);
+  drag={id:card.dataset.id,ghost:ghost,dx:e.clientX-r.left,dy:e.clientY-r.top,card:card,target:null,index:null};
+  card.classList.add("dragging");moveGhost(e);
+});
+function moveGhost(e){
+  drag.ghost.style.left=(e.clientX-drag.dx)+"px";drag.ghost.style.top=(e.clientY-drag.dy)+"px";
+  var board=document.getElementById("board"),br=board.getBoundingClientRect();
+  if(e.clientX>br.right-50)board.scrollLeft+=16;else if(e.clientX<br.left+50)board.scrollLeft-=16;
+  var el=document.elementFromPoint(e.clientX,e.clientY),col=el&&el.closest("[data-col]");
+  document.querySelectorAll(".col.over").forEach(function(c){c.classList.remove("over");});
+  if(col){col.classList.add("over");drag.target=col.dataset.col;
+    var stops=[].slice.call(col.querySelectorAll(".stop")).filter(function(s){return s!==drag.card;}),idx=stops.length;
+    for(var i=0;i<stops.length;i++){var sr=stops[i].getBoundingClientRect();if(e.clientY<sr.top+sr.height/2){idx=i;break;}}
+    drag.index=idx;
+  }else drag.target=null;
+}
+document.addEventListener("pointermove",function(e){if(drag)moveGhost(e);});
+function endDrag(e,cancel){
+  if(!drag)return;var d=drag;drag=null;d.ghost.remove();
+  document.querySelectorAll(".col.over").forEach(function(c){c.classList.remove("over");});
+  if(cancel||d.target==null){render();return;}
+  var from=posOf(d.id),idx=d.index;
+  if(d.target!=="u"){var full=state.plan.days[+d.target].filter(function(i){return i!==d.id;}),visible=full.filter(function(i){return byId(i).on;});
+    idx=idx>=visible.length?full.length:full.indexOf(visible[idx]);}
+  moveTo(d.id,d.target,idx);memo=new Map();
+  if(d.target!=="u"&&+d.target!==from)reorderDay(+d.target);
+  if(from>=0&&String(from)!==d.target)reorderDay(from);
+  save();render();
+}
+document.addEventListener("pointerup",function(e){endDrag(e,false);});
+document.addEventListener("pointercancel",function(e){endDrag(e,true);});
+
+/* ---------- Arranque ---------- */
+normalizePlan();
+if(!state.plan.days.some(function(a){return a.length;})&&state.places.length)optimizeAll();
+render();save();
+refreshRoutes(true);
+window.__app={state:function(){return state;},optimizeAll:optimizeAll,evalDay:evalDay,render:render,searchDB:searchDB,parseCoords:parseCoords,leg:leg};
+})();
+</script>
+</body>
+</html>
